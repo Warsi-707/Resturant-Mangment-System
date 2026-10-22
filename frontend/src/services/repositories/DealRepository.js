@@ -14,18 +14,16 @@ export const DealRepository = {
       const res = await api.get('/deals');
       if (res && res.success && Array.isArray(res.data)) {
         const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendIds = new Set(res.data.map((d) => d.id));
-          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
-          const merged = [...res.data, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
+        const backendIds = new Set(res.data.map((d) => d.id));
+        const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
+        if (unsynced.length > 0) {
+          for (const unsyncedDeal of unsynced) {
+            api.post('/deals', unsyncedDeal).catch(() => {});
+          }
         }
+        const merged = [...res.data, ...unsynced];
+        storage.set(STORAGE_KEY, merged);
+        return merged;
       }
     } catch {
       // Backend offline fallback

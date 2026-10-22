@@ -32,22 +32,23 @@ export const OrderRepository = {
       const res = await api.get(endpoint);
       if (res && res.success && Array.isArray(res.data)) {
         const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendKeys = new Set(res.data.map((o) => o.id || o.invoiceNumber));
-          const unsynced = local.filter((o) => {
-            const k = o.id || o.invoiceNumber;
-            return k && !backendKeys.has(k);
-          });
-          const merged = [...res.data, ...unsynced];
-          const healed = repairDuplicateInvoiceNumbersLocally(merged);
-          storage.set(STORAGE_KEY, healed);
-          return healed;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
+        const backendKeys = new Set(res.data.map((o) => o.id || o.invoiceNumber));
+        const unsynced = local.filter((o) => {
+          const k = o.id || o.invoiceNumber;
+          return k && !backendKeys.has(k);
+        });
+
+        // Automatically upload local orders that haven't reached the cloud backend yet
+        if (unsynced.length > 0) {
+          for (const unsyncedOrder of unsynced) {
+            api.post('/orders', unsyncedOrder).catch(() => {});
+          }
         }
+
+        const merged = [...res.data, ...unsynced];
+        const healed = repairDuplicateInvoiceNumbersLocally(merged);
+        storage.set(STORAGE_KEY, healed);
+        return healed;
       }
     } catch {
       // Backend offline fallback

@@ -2102,7 +2102,7 @@ export const useAppStore = create((set, get) => ({
   // Synchronize store with live Express + MongoDB Atlas backend
   syncWithBackend: async () => {
     try {
-      const [cats, its, adds, dls, ords, revs, exps, expCats, tbls, curShift] = await Promise.all([
+      const [cats, its, adds, dls, ords, revs, exps, expCats, tbls, curShift, fetchedSettings] = await Promise.all([
         CategoryRepository.getAll().catch(() => null),
         ItemRepository.getAll().catch(() => null),
         AddonRepository.getAll().catch(() => null),
@@ -2113,6 +2113,7 @@ export const useAppStore = create((set, get) => ({
         ExpenseRepository.getCategories().catch(() => null),
         TableRepository.getAll().catch(() => null),
         ShiftRepository.getCurrent().catch(() => null),
+        SettingsRepository.fetchSettings().catch(() => null),
       ]);
 
       const updates = {};
@@ -2258,6 +2259,15 @@ export const useAppStore = create((set, get) => ({
       // 8. Shift
       if (curShift !== undefined) {
         updates.currentShift = curShift;
+      }
+
+      // 9. Settings
+      if (fetchedSettings && typeof fetchedSettings === 'object') {
+        updates.settings = fetchedSettings;
+        const defaultOrderType = fetchedSettings?.pos?.defaultOrderType || fetchedSettings?.defaultOrderType;
+        if (defaultOrderType) {
+          updates.orderType = defaultOrderType;
+        }
       }
 
       if (Object.keys(updates).length > 0) {

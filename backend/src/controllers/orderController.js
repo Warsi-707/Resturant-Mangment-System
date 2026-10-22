@@ -270,8 +270,19 @@ export async function repairDuplicateInvoicesHandler(req, res, next) {
  * immutable creator attribution, and server-validated pure domain calculations.
  */
 export async function createOrder(req, res, next) {
-  try {
     const body = { ...req.body };
+
+    // Idempotency check: If order already exists in cloud database, return existing order safely
+    if (isDbConnected() && body.id) {
+      const existing = await Order.findOne({ id: body.id });
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          message: 'Order already exists in cloud database',
+          data: existing,
+        });
+      }
+    }
 
     // DB lookup for cost enrichment if line costs were omitted (e.g. Cashier client)
     let dbItemMap = new Map();
@@ -497,7 +508,8 @@ export async function createOrder(req, res, next) {
       changeAmount,
       balanceDue,
       paymentStatus,
-      completedAt: new Date(),
+      completedAt: body.completedAt ? new Date(body.completedAt) : new Date(),
+      createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
     };
 
     const createdOrder = await Order.create(orderPayload);

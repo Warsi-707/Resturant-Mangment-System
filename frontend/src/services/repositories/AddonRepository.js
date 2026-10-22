@@ -20,18 +20,16 @@ export const AddonRepository = {
             : [],
         }));
         const local = storage.get(STORAGE_KEY, []) || [];
-        if (sanitized.length > 0) {
-          const backendIds = new Set(sanitized.map((a) => a.id));
-          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
-          const merged = [...sanitized, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
+        const backendIds = new Set(sanitized.map((a) => a.id));
+        const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
+        if (unsynced.length > 0) {
+          for (const unsyncedAddon of unsynced) {
+            api.post('/addons', unsyncedAddon).catch(() => {});
+          }
         }
+        const merged = [...sanitized, ...unsynced];
+        storage.set(STORAGE_KEY, merged);
+        return merged;
       }
     } catch {
       // Backend offline fallback

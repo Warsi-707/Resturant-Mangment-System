@@ -16,21 +16,19 @@ export const ReversalRepository = {
       const res = await api.get(endpoint);
       if (res && res.success && Array.isArray(res.data)) {
         const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendKeys = new Set(res.data.map((r) => r.originalOrderId || r.originalInvoiceNumber || r.id));
-          const unsynced = local.filter((r) => {
-            const k = r.originalOrderId || r.originalInvoiceNumber || r.id;
-            return k && !backendKeys.has(k);
-          });
-          const merged = [...res.data, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
+        const backendKeys = new Set(res.data.map((r) => r.originalOrderId || r.originalInvoiceNumber || r.id));
+        const unsynced = local.filter((r) => {
+          const k = r.originalOrderId || r.originalInvoiceNumber || r.id;
+          return k && !backendKeys.has(k);
+        });
+        if (unsynced.length > 0) {
+          for (const unsyncedRev of unsynced) {
+            api.post('/reversals', unsyncedRev).catch(() => {});
+          }
         }
+        const merged = [...res.data, ...unsynced];
+        storage.set(STORAGE_KEY, merged);
+        return merged;
       }
     } catch {
       // Backend offline fallback

@@ -56,9 +56,53 @@ export class SettingsRepository {
     return defaults;
   }
 
+  async fetchSettings() {
+    const current = this.getSettings();
+    try {
+      const res = await api.get('/settings');
+      if (res && res.success && res.data) {
+        const backendData = res.data;
+        const mappedUpdates = {
+          restaurantName: backendData.businessName || backendData.restaurantName,
+          businessName: backendData.businessName || backendData.restaurantName,
+          tagline: backendData.tagline,
+          logoRef: backendData.logo || backendData.logoRef,
+          phone: backendData.phone,
+          email: backendData.email,
+          address: backendData.address,
+          ntn: backendData.ntn,
+          defaultTaxRate: backendData.defaultTaxRate,
+          isTaxEnabled: backendData.isTaxEnabled,
+          invoicePrefix: backendData.invoicePrefix,
+          footerNote: backendData.footerNote,
+          currencySymbol: backendData.currencySymbol,
+          paymentAccounts: backendData.paymentAccounts,
+        };
+        const cleanUpdates = Object.fromEntries(
+          Object.entries(mappedUpdates).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+        );
+
+        if (Object.keys(cleanUpdates).length > 0) {
+          const merged = mergeSettings(current, cleanUpdates);
+          this.storage.set(STORAGE_KEY, merged);
+          return merged;
+        } else if (current?.business?.logoRef || current?.restaurantName || current?.business?.name) {
+          this.updateSettings(current);
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+    return current;
+  }
+
   // Static helpers for direct calls without instantiation
   static getSettings() {
     return new SettingsRepository(storage).getSettings();
+  }
+
+  static fetchSettings() {
+    return new SettingsRepository(storage).fetchSettings();
   }
 
   static updateSettings(updates) {
