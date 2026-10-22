@@ -725,4 +725,55 @@ describe('Batch 6: Profit & Cost (COGS, Gross Profit & Historical Snapshots)', (
     expect(reportAddonsOnly.itemRows).toHaveLength(1);
     expect(reportAddonsOnly.itemRows[0].name).toBe('Extra Cheese');
   });
+
+  it('heals legacy 0.55 heuristic COGS when actual item catalog cost price is available (e.g. 1kg Chicken Biryani 800 cost vs 550 fallback)', () => {
+    // Order was previously stamped with legacy 55% fallback COGS = 550 (on 1000 unitPrice)
+    const legacyOrder = {
+      id: 'ord-biryani-test',
+      invoiceNumber: 'INV-BIRYANI',
+      status: 'completed',
+      completedAt: '2026-10-22T10:00:00Z',
+      grandTotal: 1000,
+      lines: [
+        {
+          id: 'line-biryani',
+          itemId: 'item-biryani-live',
+          itemNameSnapshot: 'Chicken Biryani',
+          pricingMode: 'weight',
+          selectedPortionLabel: '1kg',
+          selectedWeightGrams: 1000,
+          quantity: 1,
+          unitPrice: 1000,
+          lineSubtotal: 1000,
+          netRevenue: 1000,
+          costPriceSnapshot: 550, // Legacy 55% heuristic fallback
+          totalCOGS: 550,
+          grossProfit: 450,
+        },
+      ],
+    };
+
+    // Catalog has the real cost price 800
+    const catalogItems = [
+      {
+        id: 'item-biryani-live',
+        name: 'Chicken Biryani',
+        basePrice: 1000,
+        costPrice: 800,
+        unitType: 'weight',
+      },
+    ];
+
+    const report = getProfitAndCostReportData([legacyOrder], [], { datePreset: 'Today' }, catalogItems);
+    const biryaniRow = report.itemRows.find((r) => r.name === 'Chicken Biryani');
+
+    expect(biryaniRow).toBeDefined();
+    // Must heal from fake 550 to real catalog cost 800
+    expect(biryaniRow.cogs).toBe(800);
+    expect(biryaniRow.grossProfit).toBe(200);
+    expect(biryaniRow.margin).toBe(20);
+    expect(report.kpis.cogs).toBe(800);
+    expect(report.kpis.grossProfit).toBe(200);
+  });
 });
+

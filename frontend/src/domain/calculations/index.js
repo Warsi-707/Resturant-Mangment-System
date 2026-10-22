@@ -253,7 +253,11 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
     // Item Cost Lookup from line or catalog if not already frozen on line
     const catalogItem = Array.isArray(itemsMaster)
       ? itemsMaster.find(
-          (it) => it && (it.id === line.itemId || String(it.id).toLowerCase() === String(line.itemId).toLowerCase())
+          (it) =>
+            it &&
+            (it.id === line.itemId ||
+              String(it.id).toLowerCase() === String(line.itemId).toLowerCase() ||
+              (it.name && line.itemNameSnapshot && it.name.trim().toLowerCase() === line.itemNameSnapshot.trim().toLowerCase()))
         )
       : null;
 
@@ -275,9 +279,18 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
     const isWeight =
       line.pricingMode === 'portion' ||
       line.pricingMode === 'custom_weight' ||
+      line.pricingMode === 'weight' ||
       (line.selectedWeightGrams !== undefined && line.selectedWeightGrams !== null && line.selectedWeightGrams > 0);
 
-    const weightGramsSnapshot = isWeight ? Number(line.selectedWeightGrams) || 0 : null;
+    let weightGramsSnapshot = isWeight ? Number(line.selectedWeightGrams) || 0 : null;
+    if (isWeight && (!weightGramsSnapshot || weightGramsSnapshot <= 0)) {
+      const label = String(line.selectedPortionLabel || line.portion || line.baseUnitSnapshot || '').toLowerCase();
+      if (label.includes('1kg') || label.includes('1 kg')) weightGramsSnapshot = 1000;
+      else if (label.match(/(\d+)\s*g/)) weightGramsSnapshot = Number(label.match(/(\d+)\s*g/)[1]);
+      else if (label.includes('half')) weightGramsSnapshot = 500;
+      else if (label.includes('quarter')) weightGramsSnapshot = 250;
+      else weightGramsSnapshot = 1000;
+    }
 
     // Item COGS
     let itemCOGS = null;

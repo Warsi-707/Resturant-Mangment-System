@@ -911,7 +911,10 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
                 String(mi.id).toLowerCase() === String(line.itemId).toLowerCase() ||
                 (mi.name && lineItemName && mi.name.trim().toLowerCase() === lineItemName.trim().toLowerCase()))
           );
-          if (lineItemCostPrice === null && matchedCatItem?.costPrice !== undefined && matchedCatItem?.costPrice !== null) {
+          const isHeuristicFallback =
+            lineItemCostPrice !== null &&
+            lineItemCostPrice === Math.round(Number(line.unitPrice || 0) * 0.55);
+          if ((lineItemCostPrice === null || isHeuristicFallback) && matchedCatItem?.costPrice !== undefined && matchedCatItem?.costPrice !== null) {
             lineItemCostPrice = Number(matchedCatItem.costPrice);
           }
         }
@@ -920,6 +923,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       const isWeight = Boolean(
         line.pricingMode === 'portion' ||
         line.pricingMode === 'custom_weight' ||
+        line.pricingMode === 'weight' ||
         (line.selectedWeightGrams && Number(line.selectedWeightGrams) > 0)
       );
 
@@ -931,11 +935,12 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         if (isWeight) {
           let derivedGrams = Number(line.selectedWeightGrams) || 0;
           if (derivedGrams <= 0) {
-            const label = String(line.selectedPortionLabel || line.portion || '').toLowerCase();
+            const label = String(line.selectedPortionLabel || line.portion || line.baseUnitSnapshot || '').toLowerCase();
             if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
             else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
             else if (label.includes('half')) derivedGrams = 500;
             else if (label.includes('quarter')) derivedGrams = 250;
+            else derivedGrams = 1000;
           }
           if (derivedGrams > 0) {
             return Math.round((derivedGrams / 1000) * lineItemCostPrice * qty);
@@ -995,9 +1000,16 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         };
       });
 
+      const isHeuristicCOGS =
+        line.totalCOGS !== undefined &&
+        line.totalCOGS !== null &&
+        Number(line.totalCOGS) === Math.round(Number(line.unitPrice || 0) * 0.55);
+
       let itemCOGSVal = null;
       if (isDealLine && lineItemCostPrice !== null) {
         itemCOGSVal = Math.round(lineItemCostPrice * qty);
+      } else if (isHeuristicCOGS && lineItemCostPrice !== null) {
+        itemCOGSVal = calcItemBaseCOGS();
       } else if (processedAddons.length === 0) {
         if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
           itemCOGSVal = Number(line.totalCOGS);

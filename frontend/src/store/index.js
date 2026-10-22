@@ -787,27 +787,65 @@ export const useAppStore = create((set, get) => ({
             }
           }
 
-          if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0 && l.itemCOGS !== undefined) {
+          const activeCatalogItems = storage.get('menu_items', []) || [];
+          const activeCatalogAddons = storage.get('addons', []) || [];
+          const lookupItems = (Array.isArray(activeCatalogItems) && activeCatalogItems.length > 0)
+            ? activeCatalogItems
+            : (Array.isArray(catalogItems) ? catalogItems : []);
+          const lookupAddons = (Array.isArray(activeCatalogAddons) && activeCatalogAddons.length > 0)
+            ? activeCatalogAddons
+            : (Array.isArray(catalogAddons) ? catalogAddons : []);
+
+          const foundItem = lookupItems.find(
+            (ci) =>
+              ci &&
+              (ci.id === l.itemId ||
+                (ci.name && l.itemNameSnapshot && ci.name.trim().toLowerCase() === l.itemNameSnapshot.trim().toLowerCase()))
+          );
+          const hasCatalogCost =
+            foundItem?.costPrice !== undefined &&
+            foundItem?.costPrice !== null &&
+            !isNaN(Number(foundItem.costPrice)) &&
+            Number(foundItem.costPrice) >= 0;
+          const isHeuristicFallback =
+            Number(l.costPriceSnapshot) === Math.round(Number(l.unitPrice || 0) * 0.55);
+
+          if (
+            l.costPriceSnapshot !== undefined &&
+            l.costPriceSnapshot !== null &&
+            Number(l.costPriceSnapshot) > 0 &&
+            l.itemCOGS !== undefined &&
+            !isHeuristicFallback
+          ) {
             return l;
           }
           orderHasChange = true;
-          const foundItem = catalogItems.find(
-            (ci) => ci.id === l.itemId || (ci.name && l.itemNameSnapshot && ci.name.trim().toLowerCase() === l.itemNameSnapshot.trim().toLowerCase())
+
+          let itemCost = null;
+          if (hasCatalogCost) {
+            itemCost = Number(foundItem.costPrice);
+          } else if (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0 && !isHeuristicFallback) {
+            itemCost = Number(l.costPriceSnapshot);
+          }
+
+          const hasCost = itemCost !== null && !isNaN(itemCost) && itemCost >= 0;
+          const isWeight = Boolean(
+            l.pricingMode === 'portion' ||
+            l.pricingMode === 'custom_weight' ||
+            l.pricingMode === 'weight' ||
+            l.selectedWeightGrams
           );
-          const itemCost = (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0)
-            ? Number(l.costPriceSnapshot)
-            : (foundItem?.costPrice || Math.round((Number(l.unitPrice) || 0) * 0.55));
-          const isWeight = Boolean(l.pricingMode === 'portion' || l.pricingMode === 'custom_weight' || l.selectedWeightGrams);
           let derivedGrams = Number(l.selectedWeightGrams) || 0;
           if (isWeight && derivedGrams <= 0) {
-            const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
+            const label = String(l.selectedPortionLabel || l.portion || l.baseUnitSnapshot || '').toLowerCase();
             if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
             else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
             else if (label.includes('half')) derivedGrams = 500;
             else if (label.includes('quarter')) derivedGrams = 250;
+            else derivedGrams = 1000;
           }
-          let lineItemCOGS = itemCost * qty;
-          if (isWeight) {
+          let lineItemCOGS = hasCost ? itemCost * qty : null;
+          if (hasCost && isWeight) {
             if (derivedGrams > 0) {
               lineItemCOGS = Math.round((derivedGrams / 1000) * itemCost * qty);
             } else if (l.unitPrice && foundItem?.basePrice) {
@@ -822,26 +860,35 @@ export const useAppStore = create((set, get) => ({
               lineAddonCOGS += Number(a.costPrice) * (Number(a.quantity) || 1) * qty;
               return a;
             }
-            const foundAddon = catalogAddons.find(
-              (ca) => ca.id === a.id || (ca.name && a.name && ca.name.trim().toLowerCase() === a.name.trim().toLowerCase())
+            const foundAddon = lookupAddons.find(
+              (ca) =>
+                ca.id === a.id ||
+                (ca.name && a.name && ca.name.trim().toLowerCase() === a.name.trim().toLowerCase())
             );
-            const aCost = foundAddon?.costPrice || Math.round((Number(a.price) || 0) * 0.45);
+            const aCost =
+              foundAddon?.costPrice !== undefined && foundAddon?.costPrice !== null
+                ? Number(foundAddon.costPrice)
+                : 0;
             lineAddonCOGS += aCost * (Number(a.quantity) || 1) * qty;
             return { ...a, costPrice: aCost };
           });
-          const totalCOGS = lineItemCOGS + lineAddonCOGS;
-          const grossProfit = Math.round(netRev - totalCOGS);
-          const margin = netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : 0;
+          const totalCOGS = hasCost
+            ? (lineItemCOGS + lineAddonCOGS)
+            : (lineAddonCOGS > 0 ? lineAddonCOGS : null);
+          const grossProfit = totalCOGS !== null ? Math.round(netRev - totalCOGS) : null;
+          const margin = totalCOGS !== null && netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : null;
 
           return {
             ...l,
-            costPriceSnapshot: itemCost,
+            costPriceSnapshot: hasCost ? itemCost : null,
             itemCOGS: lineItemCOGS,
             addonCOGS: lineAddonCOGS,
             totalCOGS,
             addonSnapshots: enrichedAddons,
             grossProfit,
             grossProfitMargin: margin,
+            hasCost,
+            hasCostPrice: hasCost,
           };
         });
         return orderHasChange ? { ...o, lines: enrichedLines } : o;
@@ -1848,6 +1895,62 @@ export const useAppStore = create((set, get) => ({
     );
     storage.set('menu_items', updated);
     set({ items: updated });
+
+    // If costPrice is updated, heal any orders that previously lacked cost or used the legacy 0.55 heuristic
+    if (updates.costPrice !== undefined && updates.costPrice !== null && !isNaN(Number(updates.costPrice))) {
+      const currentOrders = get().orders || [];
+      let anyChanged = false;
+      const healedOrders = currentOrders.map((ord) => {
+        if (!Array.isArray(ord.lines)) return ord;
+        let lineChanged = false;
+        const newLines = ord.lines.map((l) => {
+          const matchItem = l.itemId === id || (l.itemNameSnapshot && updates.name && l.itemNameSnapshot.trim().toLowerCase() === updates.name.trim().toLowerCase());
+          if (matchItem) {
+            const isHeuristicFallback = Number(l.costPriceSnapshot) === Math.round(Number(l.unitPrice || 0) * 0.55);
+            if (l.costPriceSnapshot == null || isHeuristicFallback) {
+              lineChanged = true;
+              anyChanged = true;
+              const newCost = Number(updates.costPrice);
+              const qty = Math.max(1, Number(l.quantity || 1));
+              const isWeight = Boolean(l.pricingMode === 'portion' || l.pricingMode === 'custom_weight' || l.pricingMode === 'weight' || l.selectedWeightGrams);
+              let derivedGrams = Number(l.selectedWeightGrams) || 0;
+              if (isWeight && derivedGrams <= 0) {
+                const label = String(l.selectedPortionLabel || l.portion || l.baseUnitSnapshot || '').toLowerCase();
+                if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+                else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+                else if (label.includes('half')) derivedGrams = 500;
+                else if (label.includes('quarter')) derivedGrams = 250;
+                else derivedGrams = 1000;
+              }
+              const itemCOGS = (isWeight && derivedGrams > 0)
+                ? Math.round((derivedGrams / 1000) * newCost * qty)
+                : Math.round(newCost * qty);
+              const addonCOGS = Number(l.addonCOGS || 0);
+              const totalCOGS = itemCOGS + addonCOGS;
+              const netRev = Number(l.netRevenue ?? (Number(l.unitPrice || 0) * qty));
+              const grossProfit = Math.round(netRev - totalCOGS);
+              const margin = netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : 0;
+              return {
+                ...l,
+                costPriceSnapshot: newCost,
+                itemCOGS,
+                totalCOGS,
+                grossProfit,
+                grossProfitMargin: margin,
+                hasCost: true,
+                hasCostPrice: true,
+              };
+            }
+          }
+          return l;
+        });
+        return lineChanged ? { ...ord, lines: newLines } : ord;
+      });
+      if (anyChanged) {
+        storage.set('orders', healedOrders);
+        set({ orders: healedOrders });
+      }
+    }
 
     // Live sync to MongoDB Atlas via ItemRepository
     ItemRepository.update(id, updates)
