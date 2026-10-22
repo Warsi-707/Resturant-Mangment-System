@@ -270,6 +270,7 @@ export async function repairDuplicateInvoicesHandler(req, res, next) {
  * immutable creator attribution, and server-validated pure domain calculations.
  */
 export async function createOrder(req, res, next) {
+  try {
     const body = { ...req.body };
 
     // Idempotency check: If order already exists in cloud database, return existing order safely
