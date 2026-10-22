@@ -114,29 +114,19 @@ export const SettingsPage = () => {
 
   return (
     <div className="space-y-6 w-full max-w-[1280px]">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-            {sectionMeta.title}
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {sectionMeta.subtitle}
-          </p>
+      {/* Top Header for regular settings tabs */}
+      {activeTab !== 'security' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+          <div>
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+              {sectionMeta.title}
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {sectionMeta.subtitle}
+            </p>
+          </div>
         </div>
-
-        {activeTab === 'security' && !isCashier && (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setIsCreateUserModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 mr-4 sm:mr-6 rounded-xl text-xs font-semibold text-white bg-[#FF5C28] hover:bg-[#E64A19] active:bg-[#D83F0E] transition-all shadow-sm shadow-orange-500/20 cursor-pointer outline-none focus:outline-none shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Create User Account</span>
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Active Tab Content */}
       {activeTab === 'profile' && (

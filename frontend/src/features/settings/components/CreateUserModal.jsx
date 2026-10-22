@@ -54,6 +54,8 @@ export const CreateUserModal = ({ isOpen, onClose, onUserCreated }) => {
       officialTitle: cleanRole,
       phone: phone.trim(),
       password: temporaryPassword,
+      status: 'active',
+      isActive: true,
       createdAt: new Date().toISOString(),
     };
 

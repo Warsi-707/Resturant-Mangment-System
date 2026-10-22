@@ -194,7 +194,7 @@ export const LoginPage = () => {
           </div>
           <div className="flex flex-col items-center gap-0.5">
             <ShieldCheck className="w-3.5 h-3.5 text-orange-200" />
-            <span className="text-[10px] xl:text-[11px] font-semibold text-white">JWT Secured</span>
+            <span className="text-[10px] xl:text-[11px] font-semibold text-white">100% Cloud Synced</span>
           </div>
         </div>
       </div>

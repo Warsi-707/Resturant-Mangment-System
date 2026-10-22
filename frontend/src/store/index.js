@@ -392,11 +392,16 @@ export const useAppStore = create((set, get) => ({
       (u) =>
         (u.email?.toLowerCase().trim() === norm ||
           u.username?.toLowerCase().trim() === norm ||
-          u.loginIdentifier?.toLowerCase().trim() === norm) &&
+          u.loginIdentifier?.toLowerCase().trim() === norm ||
+          (u.phone && u.phone.trim() === norm) ||
+          (u.fullName && u.fullName.toLowerCase().trim() === norm)) &&
         u.password === password
     );
 
     if (customUser) {
+      if (customUser.status === 'deactivated' || customUser.isActive === false) {
+        throw new Error('This cashier account is currently deactivated by the administrator.');
+      }
       const isRoleAdmin =
         customUser.portalRole?.toLowerCase().includes('admin') ||
         customUser.role?.toLowerCase().includes('admin');
