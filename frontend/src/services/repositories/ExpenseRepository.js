@@ -21,26 +21,23 @@ export const ExpenseRepository = {
       const res = await api.get(endpoint);
       if (res && res.success && Array.isArray(res.data)) {
         const local = storage.get(EXPENSES_STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendIds = new Set(res.data.map((e) => e.id || e._id));
-          const unsynced = local.filter((loc) => {
-            const k = loc?.id || loc?._id;
-            return k && !backendIds.has(k);
-          });
-          const merged = [...unsynced, ...res.data];
-          storage.set(EXPENSES_STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          // Never wipe out local expenses with an empty backend response!
-          // Background sync local unsynced expenses to live backend
-          local.forEach((item) => {
-            api.post('/expenses', item).catch(() => {});
-          });
-          return local;
-        } else {
-          storage.set(EXPENSES_STORAGE_KEY, []);
-          return [];
+        // Only retry genuine offline pending items explicitly marked with _pendingSync
+        const pendingSyncItems = local.filter((loc) => loc?._pendingSync === true);
+        if (pendingSyncItems.length > 0) {
+          for (const pendingItem of pendingSyncItems) {
+            const cleanItem = { ...pendingItem, _pendingSync: false };
+            api.post('/expenses', cleanItem).catch(() => {});
+          }
         }
+
+        const backendIds = new Set(res.data.map((e) => e.id || e._id));
+        const merged = [
+          ...res.data,
+          ...pendingSyncItems.filter((p) => !backendIds.has(p.id)),
+        ];
+
+        storage.set(EXPENSES_STORAGE_KEY, merged);
+        return merged;
       }
     } catch {
       // Backend offline fallback
@@ -169,22 +166,8 @@ export const ExpenseRepository = {
     try {
       const res = await api.get('/expenses/categories');
       if (res && res.success && Array.isArray(res.data)) {
-        const local = storage.get(CATEGORIES_STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendIds = new Set(res.data.map((c) => c.id || c._id));
-          const unsynced = local.filter((loc) => {
-            const k = loc?.id || loc?._id;
-            return k && !backendIds.has(k);
-          });
-          const merged = [...res.data, ...unsynced];
-          storage.set(CATEGORIES_STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(CATEGORIES_STORAGE_KEY, []);
-          return [];
-        }
+        storage.set(CATEGORIES_STORAGE_KEY, res.data);
+        return res.data;
       }
     } catch {
       // Fallback

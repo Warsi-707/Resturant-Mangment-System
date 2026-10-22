@@ -1009,16 +1009,9 @@ export const useAppStore = create((set, get) => ({
     try {
       const data = await ExpenseRepository.getAll();
       if (Array.isArray(data)) {
-        const current = get().expenses || [];
-        const dataIds = new Set(data.map((e) => e.id || e._id));
-        const unsyncedCurrent = current.filter((c) => {
-          const cid = c.id || c._id;
-          return cid && !dataIds.has(cid);
-        });
-        const combined = [...unsyncedCurrent, ...data];
-        storage.set('expenses', combined);
-        set({ expenses: combined });
-        return combined;
+        storage.set('expenses', data);
+        set({ expenses: data });
+        return data;
       }
     } catch (err) {
       console.warn('[Store] fetchExpenses warning:', err.message);
@@ -1304,28 +1297,6 @@ export const useAppStore = create((set, get) => ({
   notifications: (() => {
     const saved = storage.get('notifications', null);
     if (saved && Array.isArray(saved)) return saved;
-    // Derive initial notifications from recent seed orders
-    const existingOrders = storage.get('orders', defaultSeedData.orders);
-    if (Array.isArray(existingOrders) && existingOrders.length > 0) {
-      const initial = existingOrders.slice(0, 5).map((o, idx) => ({
-        id: `notif-${o.id || idx}`,
-        type: 'order',
-        title: `New Order #${o.invoiceNumber}`,
-        description: `${o.orderType || 'Dine-In'} • Rs ${o.grandTotal || 0} • ${o.paymentMethod || 'Cash'}`,
-        orderId: o.id,
-        invoiceNumber: o.invoiceNumber,
-        amount: o.grandTotal,
-        orderType: o.orderType,
-        read: idx >= 3,
-        timestamp: o.completedAt || o.createdAt || new Date().toISOString(),
-        createdByUserId: o.createdByUserId || 'user_cashier',
-        createdByRole: o.createdByRole || 'cashier',
-        targetUserId: o.createdByUserId || null,
-        targetRoles: o.createdByRole === 'admin' ? ['admin'] : ['cashier'],
-      }));
-      storage.set('notifications', initial);
-      return initial;
-    }
     return [];
   })(),
 

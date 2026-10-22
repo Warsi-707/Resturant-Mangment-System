@@ -10,6 +10,22 @@ import { Table } from '../models/Table.js';
 import { Shift } from '../models/Shift.js';
 import { Deal } from '../models/Deal.js';
 import { Counter } from '../models/Counter.js';
+import { isDbConnected, connectDB } from '../config/db.js';
+
+// Helper: Ensure DB connection is active (handles serverless cold starts)
+async function ensureDb() {
+  if (isDbConnected()) return true;
+  if (process.env.MONGODB_URI) {
+    try {
+      await connectDB();
+      return isDbConnected();
+    } catch (err) {
+      console.warn('[SettingsController] connectDB error:', err.message);
+      return false;
+    }
+  }
+  return false;
+}
 
 /**
  * GET /api/settings
@@ -17,6 +33,7 @@ import { Counter } from '../models/Counter.js';
  */
 export async function getSettings(req, res, next) {
   try {
+    await ensureDb();
     let settings = await Settings.findOne({ id: 'system-settings' });
     if (!settings) {
       settings = await Settings.create({ id: 'system-settings' });
@@ -37,6 +54,7 @@ export async function getSettings(req, res, next) {
  */
 export async function updateSettings(req, res, next) {
   try {
+    await ensureDb();
     const updates = { ...req.body };
 
     const settings = await Settings.findOneAndUpdate(
@@ -70,6 +88,8 @@ export async function deleteAllData(req, res, next) {
         error: { message: "Confirmation phrase must exactly equal 'DELETE ALL DATA'" },
       });
     }
+
+    await ensureDb();
 
     // Run all deletions concurrently in parallel for maximum speed
     const deleteTasks = [

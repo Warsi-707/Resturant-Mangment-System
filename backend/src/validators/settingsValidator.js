@@ -19,6 +19,7 @@ export const dangerZoneResetSchema = z.object({
   confirmationPhrase: z.literal('DELETE ALL DATA', {
     errorMap: () => ({ message: "Must match exact phrase 'DELETE ALL DATA'" }),
   }),
+  resetType: z.string().optional(),
 });
 
 export function validate(schema) {

@@ -307,7 +307,7 @@ export const SecuritySettingsTab = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-blue-50 text-blue-700 border border-blue-200/60">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-orange-50 text-[#FF5C28] border border-orange-200/80">
               Enterprise Access Control
             </span>
             <span className="text-xs text-slate-400 font-medium">• Users & Permissions</span>
@@ -354,7 +354,7 @@ export const SecuritySettingsTab = ({
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : noticeType === 'error'
               ? 'bg-rose-50 border-rose-200 text-rose-900'
-              : 'bg-blue-50 border-blue-200 text-blue-900'
+              : 'bg-orange-50 border-orange-200 text-orange-950'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -364,7 +364,7 @@ export const SecuritySettingsTab = ({
                   ? 'text-emerald-600'
                   : noticeType === 'error'
                   ? 'text-rose-600'
-                  : 'text-blue-600'
+                  : 'text-[#FF5C28]'
               }`}
             />
             <span className="font-semibold">{globalNotice}</span>
@@ -495,7 +495,7 @@ export const SecuritySettingsTab = ({
                           <div
                             className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
                               isAdmin
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                                ? 'bg-orange-50 text-[#FF5C28] border border-orange-200/80'
                                 : isActive
                                 ? 'bg-amber-50 text-amber-800 border border-amber-200/80'
                                 : 'bg-slate-100 text-slate-400 border border-slate-200'
@@ -509,7 +509,7 @@ export const SecuritySettingsTab = ({
                                 {u.fullName}
                               </span>
                               {u.isYou && (
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-orange-100 text-[#E64A19]">
                                   You
                                 </span>
                               )}
@@ -542,11 +542,11 @@ export const SecuritySettingsTab = ({
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
                             isAdmin
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              ? 'bg-orange-50 text-[#FF5C28] border border-orange-200'
                               : 'bg-amber-50 text-amber-800 border border-amber-200'
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-blue-600' : 'bg-amber-600'}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${isAdmin ? 'bg-[#FF5C28]' : 'bg-amber-600'}`} />
                           {u.portalRole}
                         </span>
                       </td>

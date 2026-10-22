@@ -43,7 +43,7 @@ export const DataManagementTab = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#FF5C28] flex items-center justify-center">
               <Database className="w-4 h-4" />
             </div>
             <div>
