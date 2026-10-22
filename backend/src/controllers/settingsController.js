@@ -87,7 +87,12 @@ export async function deleteAllData(req, res, next) {
         Expense.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         ExpenseCategory.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Table.deleteMany({}).catch(() => ({ deletedCount: 0 })),
-        Shift.deleteMany({}).catch(() => ({ deletedCount: 0 }))
+        Shift.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Settings.findOneAndUpdate(
+          { id: 'system-settings' },
+          { $set: { logo: '' } },
+          { new: true }
+        ).catch(() => null)
       );
     }
 

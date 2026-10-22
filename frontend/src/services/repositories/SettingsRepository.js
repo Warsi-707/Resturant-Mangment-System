@@ -53,6 +53,14 @@ export class SettingsRepository {
   resetSettings() {
     const defaults = getDefaultSettings();
     this.storage.set(STORAGE_KEY, defaults);
+
+    // Sync reset to Atlas backend so cloud logo is also cleared
+    api.put('/settings', {
+      businessName: defaults.business?.name || defaults.restaurantName || 'SpiceHub Restaurant & Grill',
+      tagline: defaults.business?.tagline || defaults.tagline || 'Restaurant & Grill • Point of Sale',
+      logo: '',
+    }).catch(() => {});
+
     return defaults;
   }
 
@@ -62,11 +70,14 @@ export class SettingsRepository {
       const res = await api.get('/settings');
       if (res && res.success && res.data) {
         const backendData = res.data;
+        const backendLogo = backendData.logo || backendData.logoRef || null;
+        const resolvedLogo = backendLogo && String(backendLogo).trim() !== '' ? String(backendLogo).trim() : null;
+
         const mappedUpdates = {
           restaurantName: backendData.businessName || backendData.restaurantName,
           businessName: backendData.businessName || backendData.restaurantName,
           tagline: backendData.tagline,
-          logoRef: backendData.logo || backendData.logoRef,
+          logoRef: resolvedLogo,
           phone: backendData.phone,
           email: backendData.email,
           address: backendData.address,
@@ -78,17 +89,16 @@ export class SettingsRepository {
           currencySymbol: backendData.currencySymbol,
           paymentAccounts: backendData.paymentAccounts,
         };
+
         const cleanUpdates = Object.fromEntries(
-          Object.entries(mappedUpdates).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+          Object.entries(mappedUpdates).filter(
+            ([k, v]) => v !== undefined && (k === 'logoRef' || (v !== null && v !== ''))
+          )
         );
 
-        if (Object.keys(cleanUpdates).length > 0) {
-          const merged = mergeSettings(current, cleanUpdates);
-          this.storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (current?.business?.logoRef || current?.restaurantName || current?.business?.name) {
-          this.updateSettings(current);
-        }
+        const merged = mergeSettings(current, cleanUpdates);
+        this.storage.set(STORAGE_KEY, merged);
+        return merged;
       }
     } catch {
       // Offline fallback
