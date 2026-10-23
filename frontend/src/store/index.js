@@ -2195,32 +2195,70 @@ export const useAppStore = create((set, get) => ({
 
       // 1. Categories
       if (Array.isArray(cats)) {
-        updates.categories = cats;
-        storage.set('categories', cats);
+        const localCats = get().categories || [];
+        const serverCatIds = new Set(cats.map((c) => c.id || c._id));
+        const unsyncedCats = localCats.filter((loc) => loc?.id && !serverCatIds.has(loc.id));
+        for (const un of unsyncedCats) {
+          CategoryRepository.create(un).catch(() => {});
+        }
+        const combinedCats = [...cats, ...unsyncedCats];
+        updates.categories = combinedCats;
+        storage.set('categories', combinedCats);
       }
 
       // 2. Menu Items
       if (Array.isArray(its)) {
-        const healedItems = healMiscategorizedItems(its, updates.categories || get().categories || []);
+        const localItems = get().items || [];
+        const serverItemIds = new Set(its.map((i) => i.id || i._id));
+        const unsyncedItems = localItems.filter((loc) => loc?.id && !serverItemIds.has(loc.id));
+        for (const un of unsyncedItems) {
+          ItemRepository.create(un).catch(() => {});
+        }
+        const combinedItems = [...its, ...unsyncedItems];
+        const healedItems = healMiscategorizedItems(combinedItems, updates.categories || get().categories || []);
         updates.items = healedItems;
         storage.set('menu_items', healedItems);
       }
 
       // 3. Add-ons
       if (Array.isArray(adds)) {
-        updates.addons = adds;
-        storage.set('addons', adds);
+        const localAdds = get().addons || [];
+        const serverAddIds = new Set(adds.map((a) => a.id || a._id));
+        const unsyncedAdds = localAdds.filter((loc) => loc?.id && !serverAddIds.has(loc.id));
+        for (const un of unsyncedAdds) {
+          AddonRepository.create(un).catch(() => {});
+        }
+        const combinedAdds = [...adds, ...unsyncedAdds];
+        updates.addons = combinedAdds;
+        storage.set('addons', combinedAdds);
       }
 
       // 3.5. Deals
       if (Array.isArray(dls)) {
-        updates.deals = dls;
-        storage.set('deals', dls);
+        const localDeals = get().deals || [];
+        const serverDealIds = new Set(dls.map((d) => d.id || d._id));
+        const unsyncedDeals = localDeals.filter((loc) => loc?.id && !serverDealIds.has(loc.id));
+        for (const un of unsyncedDeals) {
+          DealRepository.create(un).catch(() => {});
+        }
+        const combinedDeals = [...dls, ...unsyncedDeals];
+        updates.deals = combinedDeals;
+        storage.set('deals', combinedDeals);
       }
 
       // 4. Orders
       if (Array.isArray(ords)) {
-        const healed = repairDuplicateInvoiceNumbersLocally(ords);
+        const localOrders = get().orders || [];
+        const serverKeys = new Set(ords.flatMap((o) => [o.id, o.invoiceNumber].filter(Boolean)));
+        const unsyncedOrders = localOrders.filter((loc) => {
+          const k = loc?.id || loc?.invoiceNumber;
+          return k && !serverKeys.has(k);
+        });
+        for (const un of unsyncedOrders) {
+          OrderRepository.create(un).catch(() => {});
+        }
+        const combinedOrders = [...ords, ...unsyncedOrders];
+        const healed = repairDuplicateInvoiceNumbersLocally(combinedOrders);
         const getSeq = (o) => {
           if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > 0) return Number(o.sequenceNumber);
           const m = String(o.invoiceNumber || o.id || '').match(/(\d+)/g);
@@ -2241,20 +2279,44 @@ export const useAppStore = create((set, get) => ({
 
       // 5. Reversals
       if (Array.isArray(revs)) {
-        updates.reversals = revs;
-        storage.set('reversals', revs);
+        const localReversals = get().reversals || [];
+        const serverKeys = new Set(revs.flatMap((r) => [r.id, r.originalOrderId, r.originalInvoiceNumber].filter(Boolean)));
+        const unsyncedReversals = localReversals.filter((loc) => {
+          const k = loc?.id || loc?.originalOrderId || loc?.originalInvoiceNumber;
+          return k && !serverKeys.has(k);
+        });
+        for (const un of unsyncedReversals) {
+          ReversalRepository.create(un).catch(() => {});
+        }
+        const combinedReversals = [...revs, ...unsyncedReversals];
+        updates.reversals = combinedReversals;
+        storage.set('reversals', combinedReversals);
       }
 
       // 6. Expenses
       if (Array.isArray(exps)) {
-        updates.expenses = exps;
-        storage.set('expenses', exps);
+        const localExpenses = get().expenses || [];
+        const serverExpIds = new Set(exps.map((e) => e.id || e._id));
+        const unsyncedExpenses = localExpenses.filter((loc) => loc?.id && !serverExpIds.has(loc.id));
+        for (const un of unsyncedExpenses) {
+          ExpenseRepository.create(un).catch(() => {});
+        }
+        const combinedExpenses = [...exps, ...unsyncedExpenses];
+        updates.expenses = combinedExpenses;
+        storage.set('expenses', combinedExpenses);
       }
 
       // 6.5 Expense Categories
       if (Array.isArray(expCats)) {
-        updates.expenseCategories = expCats;
-        storage.set('expense_categories', expCats);
+        const localExpCats = get().expenseCategories || [];
+        const serverCatIds = new Set(expCats.map((c) => c.id || c._id));
+        const unsyncedCats = localExpCats.filter((loc) => loc?.id && !serverCatIds.has(loc.id));
+        for (const un of unsyncedCats) {
+          ExpenseRepository.createCategory(un).catch(() => {});
+        }
+        const combinedCats = [...expCats, ...unsyncedCats];
+        updates.expenseCategories = combinedCats;
+        storage.set('expense_categories', combinedCats);
       }
 
       // 7. Tables

@@ -46,6 +46,11 @@ export async function checkAndMigrateLegacyLocalStorage() {
     return { migrated: false, reason: 'SSR / Non-browser environment' };
   }
 
+  // If already migrated, do not run again
+  if (window.localStorage.getItem('rms_migration_completed_v2') === 'true') {
+    return { migrated: true, message: 'Already migrated' };
+  }
+
   // Check if any legacy permanent keys exist in localStorage
   const foundKeys = LEGACY_PERMANENT_KEYS.filter((k) => {
     const val = getRawLocalData(k);
@@ -53,6 +58,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
   });
 
   if (foundKeys.length === 0) {
+    window.localStorage.setItem('rms_migration_completed_v2', 'true');
     return { migrated: false, message: 'No legacy localStorage data to migrate' };
   }
 
@@ -89,7 +95,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.categories++;
         }
       }
-      removeRawLocalData('categories');
+      // preserve cache
     }
 
     // 2. Menu Items Migration
@@ -104,7 +110,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.items++;
         }
       }
-      removeRawLocalData('menu_items');
+      // preserve cache
     }
 
     // 3. Add-ons Migration
@@ -119,7 +125,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.addons++;
         }
       }
-      removeRawLocalData('addons');
+      // preserve cache
     }
 
     // 4. Deals Migration
@@ -134,7 +140,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.deals++;
         }
       }
-      removeRawLocalData('deals');
+      // preserve cache
     }
 
     // 5. Expense Categories Migration
@@ -149,7 +155,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.expenseCategories++;
         }
       }
-      removeRawLocalData('expense_categories');
+      // preserve cache
     }
 
     // 6. Expenses Migration
@@ -164,7 +170,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.expenses++;
         }
       }
-      removeRawLocalData('expenses');
+      // preserve cache
     }
 
     // 7. Orders & Invoices Migration
@@ -182,7 +188,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.orders++;
         }
       }
-      removeRawLocalData('orders');
+      // preserve cache
     }
 
     // 8. Reversals Migration
@@ -200,7 +206,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.reversals++;
         }
       }
-      removeRawLocalData('reversals');
+      // preserve cache
     }
 
     // 9. Deletion & Audit History Migration
@@ -215,7 +221,7 @@ export async function checkAndMigrateLegacyLocalStorage() {
           summary.auditLogs++;
         }
       }
-      removeRawLocalData('deletion_history');
+      // preserve cache
     }
 
     // 10. Users List Migration
@@ -229,16 +235,17 @@ export async function checkAndMigrateLegacyLocalStorage() {
           await api.post('/auth/users', u).catch(() => {});
         }
       }
-      removeRawLocalData('rms_users_list');
-      removeRawLocalData('rms_custom_users');
+      // preserve cache
+      // preserve cache
     }
 
     // Clean other permanent references if present
-    removeRawLocalData('pos_cart');
-    removeRawLocalData('shifts');
-    removeRawLocalData('notifications');
+    // preserve cache
+    // preserve cache
+    // preserve cache
 
     console.log('[Migration] Controlled migration complete. Summary:', summary);
+    window.localStorage.setItem('rms_migration_completed_v2', 'true');
     return { migrated: true, summary };
   } catch (err) {
     console.warn('[Migration] Migration error:', err.message);

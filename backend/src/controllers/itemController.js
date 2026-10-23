@@ -169,17 +169,26 @@ export async function createItem(req, res, next) {
   try {
     const payload = { ...req.body };
 
-    // Validate that categoryId exists in database
-    const category = await Category.findOne({ id: payload.categoryId });
+    // Validate that categoryId exists in database, or find by name / Mongo _id
+    let category = await Category.findOne({
+      $or: [
+        { id: payload.categoryId },
+        ...(mongoose.Types.ObjectId.isValid(payload.categoryId) ? [{ _id: payload.categoryId }] : []),
+        ...(payload.categoryName ? [{ name: new RegExp('^' + escapeRegex(payload.categoryName) + '$', 'i') }] : []),
+      ],
+    });
+
     if (!category) {
-      return res.status(400).json({
-        success: false,
-        error: { message: `Referenced Category ID '${payload.categoryId}' does not exist` },
-      });
+      const catName = payload.categoryName || (payload.categoryId ? payload.categoryId.replace(/^cat-/, '').replace(/-/g, ' ') : 'General');
+      category = await Category.create({
+        id: payload.categoryId || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        name: catName,
+        status: 'active',
+      }).catch(() => null);
     }
 
     // Set categoryName snapshot if not passed
-    if (!payload.categoryName) {
+    if (category && !payload.categoryName) {
       payload.categoryName = category.name;
     }
 
