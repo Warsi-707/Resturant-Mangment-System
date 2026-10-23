@@ -8,6 +8,7 @@ import {
   getNextInvoiceNumberHandler,
   repairDuplicateInvoicesHandler,
   settleOrderBalance,
+  deleteOrder,
 } from '../controllers/orderController.js';
 import {
   createOrderSchema,
@@ -31,5 +32,6 @@ router.post('/seed', seedOrders);
 router.get('/:id', getOrderById);
 router.patch('/:id/kitchen-status', updateKitchenStatus);
 router.patch('/:id/settle-balance', settleOrderBalance);
+router.delete('/:id', deleteOrder);
 
 export default router;

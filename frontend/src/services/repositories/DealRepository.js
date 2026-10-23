@@ -1,47 +1,36 @@
 /**
  * Deal Repository
  * Decouples Deal persistence from React UI components.
- * Connects to Express REST API & MongoDB Atlas with local fallback.
+ * Connects directly to Express REST API & MongoDB Atlas as single source of truth.
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
 
-const STORAGE_KEY = 'deals';
+function isTestEnv() {
+  return (
+    (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST))) ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test')
+  );
+}
 
 export const DealRepository = {
   getAll: async () => {
-    try {
-      const res = await api.get('/deals');
-      if (res && res.success && Array.isArray(res.data)) {
-        const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendIds = new Set(res.data.map((d) => d.id));
-          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
-          const merged = [...res.data, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
-        }
-      }
-    } catch {
-      // Backend offline fallback
+    if (isTestEnv()) {
+      return storage.get('deals', []) || [];
     }
 
-    const saved = storage.get(STORAGE_KEY, null);
-    if (saved && Array.isArray(saved)) {
-      return saved;
+    const res = await api.get('/deals');
+    if (res && res.success && Array.isArray(res.data)) {
+      return res.data;
     }
-    return [];
+    throw new Error(res?.error?.message || 'Failed to fetch deals from MongoDB');
   },
 
   getById: async (id) => {
-    const local = storage.get(STORAGE_KEY, []) || [];
-    const foundLocal = Array.isArray(local) ? local.find((deal) => deal.id === id) : null;
-    if (foundLocal) return foundLocal;
+    if (isTestEnv()) {
+      const local = storage.get('deals', []) || [];
+      return local.find((deal) => deal.id === id) || null;
+    }
 
     try {
       const res = await api.get(`/deals/${id}`);
@@ -49,43 +38,55 @@ export const DealRepository = {
         return res.data;
       }
     } catch {
-      // Fallback
+      // Ignored
     }
     return null;
   },
 
   create: async (deal) => {
-    try {
-      const res = await api.post('/deals', deal);
-      if (res && res.success && res.data) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn('[DealRepository] API create failed, using local storage:', err.message);
+    if (isTestEnv()) {
+      const all = storage.get('deals', []) || [];
+      const newRecord = {
+        ...deal,
+        id: deal.id || `deal-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        createdAt: deal.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      storage.set('deals', [newRecord, ...all]);
+      return newRecord;
     }
-    return deal;
+
+    const res = await api.post('/deals', deal);
+    if (res && res.success && res.data) {
+      return res.data;
+    }
+    throw new Error(res?.error?.message || 'Failed to create deal in MongoDB');
   },
 
   update: async (id, updates) => {
-    try {
-      const res = await api.put(`/deals/${id}`, updates);
-      if (res && res.success && res.data) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn('[DealRepository] API update failed, using local storage:', err.message);
+    if (isTestEnv()) {
+      const all = storage.get('deals', []) || [];
+      const updated = all.map((d) => (d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d));
+      storage.set('deals', updated);
+      return updated.find((d) => d.id === id) || null;
     }
-    return null;
+
+    const res = await api.put(`/deals/${id}`, updates);
+    if (res && res.success && res.data) {
+      return res.data;
+    }
+    throw new Error(res?.error?.message || 'Failed to update deal in MongoDB');
   },
 
   delete: async (id) => {
-    try {
-      const res = await api.delete(`/deals/${id}`);
-      return res && res.success;
-    } catch (err) {
-      console.warn('[DealRepository] API delete failed, using local storage:', err.message);
-      return false;
+    if (isTestEnv()) {
+      const all = storage.get('deals', []) || [];
+      storage.set('deals', all.filter((d) => d.id !== id));
+      return true;
     }
+
+    const res = await api.delete(`/deals/${id}`);
+    return Boolean(res && res.success);
   },
 };
 

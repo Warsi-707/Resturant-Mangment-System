@@ -403,3 +403,206 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/auth/users
+ * Returns list of all system users from MongoDB
+ */
+export const getAllUsers = async (req, res) => {
+  try {
+    await ensureDefaultUsers().catch(() => {});
+    const users = await User.find({}).sort({ createdAt: 1 });
+
+    const formatted = users.map((u) => {
+      const isAdmin = u.username === 'admin' || u.role === 'admin' || u.id === 'user_admin';
+      return {
+        id: u.id,
+        name: u.name,
+        officialTitle: isAdmin ? 'Executive Officer / Owner' : (u.officialTitle || 'Sales & Billing Specialist'),
+        username: u.username,
+        email: u.email,
+        phone: u.phone || (isAdmin ? '03001112233' : '03001234567'),
+        portalRole: isAdmin ? 'Admin' : 'Sales & Billing',
+        systemRole: isAdmin ? 'Admin' : 'Sales & Billing',
+        role: u.role || (isAdmin ? 'admin' : 'cashier'),
+        branch: 'All Branches',
+        linkedEmployeeRecord: isAdmin ? 'Direct System User' : (u.linkedEmployeeRecord || 'EMP-001'),
+        status: u.status || 'active',
+        isFixedAdmin: isAdmin,
+        isActiveCashier: Boolean(u.isActiveCashier),
+        avatarUrl: u.avatarUrl || (isAdmin
+          ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80'),
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: formatted.length,
+      data: formatted,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve users',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * POST /api/auth/users
+ * Create a new user account in MongoDB
+ */
+export const createUser = async (req, res) => {
+  try {
+    const {
+      id,
+      name,
+      username,
+      email,
+      password = '1234',
+      role = 'cashier',
+      phone,
+      officialTitle,
+      avatarUrl,
+      status = 'active',
+      isActiveCashier = false,
+    } = req.body;
+
+    const trimmedUsername = (username || '').trim().toLowerCase();
+    const trimmedEmail = (email || `${trimmedUsername}@spicehub.pk`).trim().toLowerCase();
+
+    if (!trimmedUsername || !name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name and username are required',
+      });
+    }
+
+    const userId = id || `user-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
+    const existing = await User.findOne({
+      $or: [{ username: trimmedUsername }, { email: trimmedEmail }, { id: userId }],
+    });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `User with username '${trimmedUsername}' or email already exists`,
+      });
+    }
+
+    const newUser = await User.create({
+      id: userId,
+      name: name.trim(),
+      username: trimmedUsername,
+      email: trimmedEmail,
+      password,
+      role: role.toLowerCase().includes('admin') ? 'admin' : 'cashier',
+      status: status === 'deactivated' ? 'inactive' : 'active',
+      avatarUrl: avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'User created successfully in MongoDB',
+      data: {
+        id: newUser.id,
+        name: newUser.name,
+        username: newUser.username,
+        email: newUser.email,
+        role: newUser.role,
+        status: newUser.status,
+        phone,
+        officialTitle,
+        isActiveCashier,
+        branch: 'All Branches',
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create user',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * PUT /api/auth/users/:id
+ * Update user details or status in MongoDB
+ */
+export const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = { ...req.body };
+
+    const user = await User.findOne({
+      $or: [{ id }, { username: id }],
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: `User with ID '${id}' not found`,
+      });
+    }
+
+    if (updates.name) user.name = updates.name.trim();
+    if (updates.password && updates.password.length >= 4) user.password = updates.password;
+    if (updates.role) user.role = updates.role.toLowerCase().includes('admin') ? 'admin' : 'cashier';
+    if (updates.status) user.status = updates.status === 'deactivated' ? 'inactive' : 'active';
+    if (updates.avatarUrl !== undefined) user.avatarUrl = updates.avatarUrl;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'User updated successfully in MongoDB',
+      data: user,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update user',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * DELETE /api/auth/users/:id
+ * Remove user account from MongoDB (fixed admin protected)
+ */
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === 'user_admin' || id === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete fixed System Admin account',
+      });
+    }
+
+    const deleted = await User.findOneAndDelete({
+      $or: [{ id }, { username: id }],
+    });
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: `User with ID '${id}' not found`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `User '${deleted.username}' deleted successfully`,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      error: error.message,
+    });
+  }
+};

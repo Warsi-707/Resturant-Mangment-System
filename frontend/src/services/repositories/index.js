@@ -8,4 +8,6 @@ export { ExpenseRepository } from './ExpenseRepository';
 export { TableRepository } from './TableRepository';
 export { ShiftRepository } from './ShiftRepository';
 export { DealRepository } from './DealRepository';
+export { AuditLogRepository } from './AuditLogRepository';
+export { UserRepository } from './UserRepository';
 export * from './types';

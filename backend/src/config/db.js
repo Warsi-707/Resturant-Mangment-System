@@ -18,7 +18,7 @@ if (!cached) {
 }
 
 export async function connectDB() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || 'mongodb+srv://khuzaimaali_db_user:G9HhmuSnOAqR7xH8@rms0.kywbdnz.mongodb.net/restaurant_pos?retryWrites=true&w=majority';
 
   if (!uri) {
     console.warn('⚠️ MONGODB_URI is not defined in environment variables. Running in disconnected mode.');

@@ -10,15 +10,17 @@ try {
 
 import { app } from './src/app.js';
 import { connectDB } from './src/config/db.js';
+import { bootstrapDatabase } from './src/config/bootstrap.js';
 import { ensureDefaultUsers } from './src/controllers/authController.js';
 
 let isConnected = false;
 
 // Auto-connect MongoDB on cloud/serverless requests
 app.use(async (req, res, next) => {
-  if (!isConnected && process.env.MONGODB_URI) {
+  if (!isConnected) {
     try {
       await connectDB();
+      await bootstrapDatabase().catch(() => {});
       await ensureDefaultUsers().catch(() => {});
       isConnected = true;
     } catch (err) {

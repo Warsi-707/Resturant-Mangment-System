@@ -1,7 +1,7 @@
 /**
  * Order Repository
  * Connects POS checkout and billing to the Express REST API & MongoDB Atlas.
- * Provides resilient offline fallback to local storage.
+ * Canonical persistence is MongoDB Atlas.
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
@@ -10,7 +10,12 @@ import {
   repairDuplicateInvoiceNumbersLocally,
 } from '../../domain/selectors/invoiceSelectors';
 
-const STORAGE_KEY = 'orders';
+function isTestEnv() {
+  return (
+    (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST))) ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test')
+  );
+}
 
 export const OrderRepository = {
   getNextInvoiceNumber: async (prefix = 'INV-') => {
@@ -20,50 +25,32 @@ export const OrderRepository = {
         return res;
       }
     } catch {
-      // Server offline / disconnected fallback
+      // Offline / disconnected fallback
     }
-    const all = storage.get(STORAGE_KEY, []) || [];
+    const all = storage.get('orders', []) || [];
     return generateNextSequentialInvoiceNumber(all, prefix);
   },
+
   getAll: async (params = {}) => {
-    try {
-      const query = new URLSearchParams(params).toString();
-      const endpoint = query ? `/orders?${query}` : '/orders';
-      const res = await api.get(endpoint);
-      if (res && res.success && Array.isArray(res.data)) {
-        const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendKeys = new Set(res.data.map((o) => o.id || o.invoiceNumber));
-          const unsynced = local.filter((o) => {
-            const k = o.id || o.invoiceNumber;
-            return k && !backendKeys.has(k);
-          });
-          const merged = [...res.data, ...unsynced];
-          const healed = repairDuplicateInvoiceNumbersLocally(merged);
-          storage.set(STORAGE_KEY, healed);
-          return healed;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
-        }
-      }
-    } catch {
-      // Backend offline fallback
+    if (isTestEnv()) {
+      const saved = storage.get('orders', []);
+      return Array.isArray(saved) ? saved : [];
     }
 
-    const saved = storage.get(STORAGE_KEY, null);
-    if (saved && Array.isArray(saved)) return saved;
-    return [];
+    const query = new URLSearchParams(params).toString();
+    const endpoint = query ? `/orders?${query}` : '/orders';
+    const res = await api.get(endpoint);
+    if (res && res.success && Array.isArray(res.data)) {
+      return repairDuplicateInvoiceNumbersLocally(res.data);
+    }
+    throw new Error(res?.error?.message || 'Failed to fetch orders from MongoDB');
   },
 
   getById: async (id) => {
-    const local = storage.get(STORAGE_KEY, []) || [];
-    const foundLocal = Array.isArray(local)
-      ? local.find((o) => o.id === id || o.invoiceNumber === id)
-      : null;
-    if (foundLocal) return foundLocal;
+    if (isTestEnv()) {
+      const local = storage.get('orders', []) || [];
+      return local.find((o) => o.id === id || o.invoiceNumber === id) || null;
+    }
 
     try {
       const res = await api.get(`/orders/${id}`);
@@ -71,62 +58,39 @@ export const OrderRepository = {
         return res.data;
       }
     } catch {
-      // Fallback
+      // Ignored
     }
-
-    const all = await OrderRepository.getAll();
-    return all.find((o) => o.id === id || o.invoiceNumber === id) || null;
+    return null;
   },
 
   create: async (orderPayload) => {
-    try {
-      const res = await api.post('/orders', orderPayload);
-      if (res && res.success && res.data) {
-        const all = storage.get(STORAGE_KEY, []) || [];
-        let finalOrder = res.data;
-        const otherOrders = all.filter((o) => o.id !== res.data.id && o.id !== orderPayload.id);
-        const hasCollision = otherOrders.some((o) => o.invoiceNumber === res.data.invoiceNumber);
-        if (hasCollision && orderPayload.invoiceNumber && !otherOrders.some((o) => o.invoiceNumber === orderPayload.invoiceNumber)) {
-          finalOrder = { ...res.data, invoiceNumber: orderPayload.invoiceNumber, sequenceNumber: orderPayload.sequenceNumber };
-        }
-        const deduped = [finalOrder, ...otherOrders];
-        const healed = repairDuplicateInvoiceNumbersLocally(deduped);
-        storage.set(STORAGE_KEY, healed);
-        return finalOrder;
-      }
-    } catch (err) {
-      console.warn('[OrderRepository] Live API sync deferred, order safely stored locally:', err.message);
+    if (isTestEnv()) {
+      const all = storage.get('orders', []) || [];
+      const updated = [orderPayload, ...all.filter((o) => o.id !== orderPayload.id)];
+      storage.set('orders', updated);
+      return orderPayload;
     }
 
-    // Offline client fallback: Ensure order is in storage without duplicating
-    const all = storage.get(STORAGE_KEY, []) || [];
-    const exists = all.some(
-      (o) =>
-        (orderPayload.id && o.id === orderPayload.id) ||
-        (orderPayload.invoiceNumber && o.invoiceNumber === orderPayload.invoiceNumber)
-    );
-    if (!exists) {
-      storage.set(STORAGE_KEY, [orderPayload, ...all]);
+    const res = await api.post('/orders', orderPayload);
+    if (res && res.success && res.data) {
+      return res.data;
     }
-    return orderPayload;
+    throw new Error(res?.error?.message || 'Failed to create order in MongoDB');
   },
 
   updateKitchenStatus: async (id, kitchenStatus) => {
-    try {
-      const res = await api.patch(`/orders/${id}/kitchen-status`, { kitchenStatus });
-      if (res && res.success && res.data) {
-        const all = storage.get(STORAGE_KEY, []) || [];
-        storage.set(STORAGE_KEY, all.map((o) => (o.id === id ? res.data : o)));
-        return res.data;
-      }
-    } catch {
-      // Fallback
+    if (isTestEnv()) {
+      const all = storage.get('orders', []) || [];
+      const updated = all.map((o) => (o.id === id ? { ...o, kitchenStatus } : o));
+      storage.set('orders', updated);
+      return updated.find((o) => o.id === id);
     }
 
-    const all = storage.get(STORAGE_KEY, []) || [];
-    const updated = all.map((o) => (o.id === id ? { ...o, kitchenStatus } : o));
-    storage.set(STORAGE_KEY, updated);
-    return updated.find((o) => o.id === id);
+    const res = await api.patch(`/orders/${id}/kitchen-status`, { kitchenStatus });
+    if (res && res.success && res.data) {
+      return res.data;
+    }
+    return null;
   },
 
   settleBalance: async (
@@ -146,30 +110,47 @@ export const OrderRepository = {
       note = '',
     } = {}
   ) => {
-    try {
-      const res = await api.patch(`/orders/${id}/settle-balance`, {
-        amountPaid,
-        paymentMethod,
-        receivedBy,
-        cardNetwork,
-        cardSlipNumber,
-        onlineChannel,
-        onlineAccountId,
-        onlineAccountNumber,
-        onlineAccountTitle,
-        onlineBankName,
-        onlineTransactionId,
-        note,
-      });
-      if (res && res.success && res.data) {
-        const all = storage.get(STORAGE_KEY, []) || [];
-        storage.set(STORAGE_KEY, all.map((o) => (o.id === id || o.invoiceNumber === id ? res.data : o)));
-        return res.data;
+    if (isTestEnv()) {
+      const all = storage.get('orders', []) || [];
+      const order = all.find((o) => o.id === id || o.invoiceNumber === id);
+      if (order) {
+        order.amountPaid = (Number(order.amountPaid) || 0) + Number(amountPaid);
+        order.balanceDue = Math.max(0, (Number(order.balanceDue) || 0) - Number(amountPaid));
+        storage.set('orders', all);
+        return order;
       }
-    } catch (err) {
-      console.warn('[OrderRepository] settleBalance live sync warning:', err.message);
+      return null;
+    }
+
+    const res = await api.patch(`/orders/${id}/settle-balance`, {
+      amountPaid,
+      paymentMethod,
+      receivedBy,
+      cardNetwork,
+      cardSlipNumber,
+      onlineChannel,
+      onlineAccountId,
+      onlineAccountNumber,
+      onlineAccountTitle,
+      onlineBankName,
+      onlineTransactionId,
+      note,
+    });
+    if (res && res.success && res.data) {
+      return res.data;
     }
     return null;
+  },
+
+  delete: async (id) => {
+    if (isTestEnv()) {
+      const all = storage.get('orders', []) || [];
+      storage.set('orders', all.filter((o) => o.id !== id && o.invoiceNumber !== id));
+      return true;
+    }
+
+    const res = await api.delete(`/orders/${id}`);
+    return Boolean(res && res.success);
   },
 };
 

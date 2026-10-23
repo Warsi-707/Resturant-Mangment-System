@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import { storage } from '../../../services/persistence/storage';
+import { UserRepository } from '../../../services/repositories';
+import { getApiBaseUrl } from '../../../services/adapters/apiClient';
 import { CreateUserModal } from './CreateUserModal';
 
 // Default system users with restaurant specific data
@@ -116,57 +118,40 @@ export const SecuritySettingsTab = ({
   const setIsCreateModalOpen = propSetIsOpen || setInternalIsOpen;
 
   // Users State (Strictly normalized to All Branches and Admin)
-  const [usersList, setUsersList] = useState(() => {
-    const saved = storage.get('rms_users_list', null);
-    if (Array.isArray(saved) && saved.length > 0) {
-      const normalized = saved.map((u) => {
-        const isAdmin = Boolean(
-          u.isFixedAdmin ||
-          u.id === 'user_admin' ||
-          u.username === 'admin' ||
-          u.username === 'superadmin' ||
-          u.email?.includes('superadmin') ||
-          u.name?.toLowerCase().includes('admin') ||
-          u.role === 'admin' ||
-          u.portalRole?.toLowerCase().includes('admin')
-        );
-        if (isAdmin) {
-          return {
-            ...u,
-            id: 'user_admin',
-            name: 'Admin',
-            officialTitle: 'Executive Officer / Owner',
-            username: 'admin',
-            email: 'admin@spicehub.pk',
-            phone: '03001112233',
-            portalRole: 'Admin',
-            systemRole: 'Admin',
-            role: 'admin',
-            branch: 'All Branches',
-            linkedEmployeeRecord: 'Direct System User',
-            status: 'active',
-            isFixedAdmin: true,
-          };
+  const [usersList, setUsersList] = useState(INITIAL_SYSTEM_USERS);
+
+  // Fetch canonical users from MongoDB Atlas on mount
+  React.useEffect(() => {
+    let isMounted = true;
+    UserRepository.getAll()
+      .then((data) => {
+        if (!isMounted) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const normalized = data.map((u) => {
+            const isAdmin = Boolean(
+              u.isFixedAdmin ||
+              u.id === 'user_admin' ||
+              u.username === 'admin' ||
+              u.role?.toLowerCase() === 'admin' ||
+              u.portalRole?.toLowerCase() === 'admin'
+            );
+            return {
+              ...u,
+              id: u.id || u._id,
+              branch: 'All Branches',
+              portalRole: isAdmin ? 'Admin' : (u.portalRole || 'Sales & Billing'),
+              systemRole: isAdmin ? 'Admin' : (u.systemRole || 'Sales & Billing'),
+              isFixedAdmin: isAdmin,
+            };
+          });
+          setUsersList(normalized);
         }
-        return {
-          ...u,
-          branch: 'All Branches',
-          portalRole: u.portalRole || 'Sales & Billing',
-          systemRole: u.systemRole || 'Sales & Billing',
-        };
+      })
+      .catch((err) => {
+        console.warn('[SecuritySettingsTab] fetch users warning:', err.message);
       });
-      storage.set('rms_users_list', normalized);
-      return normalized;
-    }
-    const customUsers = storage.get('rms_custom_users', []);
-    if (Array.isArray(customUsers) && customUsers.length > 0) {
-      const merged = [INITIAL_SYSTEM_USERS[0], ...customUsers].map((u) => ({ ...u, branch: 'All Branches' }));
-      storage.set('rms_users_list', merged);
-      return merged;
-    }
-    storage.set('rms_users_list', INITIAL_SYSTEM_USERS);
-    return INITIAL_SYSTEM_USERS;
-  });
+    return () => { isMounted = false; };
+  }, []);
 
   // Filter & Search states (matching Screenshot 1)
   const [searchTerm, setSearchTerm] = useState('');
@@ -217,7 +202,7 @@ export const SecuritySettingsTab = ({
    * Sets this cashier as Active, deactivates all other cashiers,
    * and immediately updates the active cashier on Cashier Portal & POS.
    */
-  const handleActivateCashier = (targetCashier) => {
+  const handleActivateCashier = async (targetCashier) => {
     if (targetCashier.isFixedAdmin) return;
 
     const updated = usersList.map((u) => {
@@ -237,10 +222,8 @@ export const SecuritySettingsTab = ({
     });
 
     setUsersList(updated);
-    storage.set('rms_users_list', updated);
-    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
 
-    // Save active cashier references
+    // Save active cashier references for POS terminal session
     const activeCashierPayload = {
       id: targetCashier.id,
       name: targetCashier.name || targetCashier.fullName,
@@ -263,8 +246,16 @@ export const SecuritySettingsTab = ({
     };
     storage.set('user_profiles', profiles);
 
-    // Setting active cashier ONLY applies to Cashier Portal & POS.
-    // The Admin user remains logged in as Admin in this Admin portal.
+    // Sync status with MongoDB Atlas
+    try {
+      await Promise.all(
+        updated
+          .filter((u) => !u.isFixedAdmin)
+          .map((u) => UserRepository.update(u.id, { status: u.status, isActiveCashier: u.isActiveCashier }))
+      );
+    } catch (err) {
+      console.warn('[SecuritySettingsTab] sync activate error:', err.message);
+    }
 
     setOpenActionMenuId(null);
     setNotification(`Cashier "${targetCashier.name}" is now the ACTIVE cashier on Cashier Portal & POS!`);
@@ -274,7 +265,7 @@ export const SecuritySettingsTab = ({
   /**
    * Deactivate Cashier Handler
    */
-  const handleDeactivateCashier = (targetCashier) => {
+  const handleDeactivateCashier = async (targetCashier) => {
     if (targetCashier.isFixedAdmin) return;
 
     const updated = usersList.map((u) => {
@@ -289,8 +280,11 @@ export const SecuritySettingsTab = ({
     });
 
     setUsersList(updated);
-    storage.set('rms_users_list', updated);
-    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+    try {
+      await UserRepository.update(targetCashier.id, { status: 'deactivated', isActiveCashier: false });
+    } catch (err) {
+      console.warn('[SecuritySettingsTab] deactivate error:', err.message);
+    }
     setOpenActionMenuId(null);
     setNotification(`Cashier "${targetCashier.name}" access deactivated.`);
     setTimeout(() => setNotification(''), 4000);
@@ -299,13 +293,16 @@ export const SecuritySettingsTab = ({
   /**
    * Delete Cashier Handler
    */
-  const handleDeleteCashier = (targetCashier) => {
+  const handleDeleteCashier = async (targetCashier) => {
     if (targetCashier.isFixedAdmin) return;
     if (window.confirm(`Are you sure you want to delete cashier account for "${targetCashier.name}"?`)) {
       const updated = usersList.filter((u) => u.id !== targetCashier.id);
       setUsersList(updated);
-      storage.set('rms_users_list', updated);
-      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+      try {
+        await UserRepository.delete(targetCashier.id);
+      } catch (err) {
+        console.warn('[SecuritySettingsTab] delete user error:', err.message);
+      }
       setOpenActionMenuId(null);
       setNotification(`Cashier account for "${targetCashier.name}" removed.`);
       setTimeout(() => setNotification(''), 4000);
@@ -315,7 +312,7 @@ export const SecuritySettingsTab = ({
   /**
    * Save Password Handler
    */
-  const handleSavePassword = (e) => {
+  const handleSavePassword = async (e) => {
     e.preventDefault();
     if (!newPassword || newPassword.length < 4) {
       alert('Password must be at least 4 characters long.');
@@ -324,9 +321,13 @@ export const SecuritySettingsTab = ({
     if (!passwordModalUser) return;
 
     if (passwordModalUser.isFixedAdmin) {
-      const creds = storage.get('auth_credentials', { admin: 'admin123', cashier: 'cashier123' });
-      creds.admin = newPassword;
-      storage.set('auth_credentials', creds);
+      try {
+        await fetch(`${getApiBaseUrl()}/auth/change-password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetRole: 'admin', newPassword }),
+        });
+      } catch {}
     } else {
       const updated = usersList.map((u) => {
         if (u.id === passwordModalUser.id) {
@@ -335,12 +336,10 @@ export const SecuritySettingsTab = ({
         return u;
       });
       setUsersList(updated);
-      storage.set('rms_users_list', updated);
-      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
-      if (passwordModalUser.isActiveCashier) {
-        const creds = storage.get('auth_credentials', { admin: 'admin123', cashier: 'cashier123' });
-        creds.cashier = newPassword;
-        storage.set('auth_credentials', creds);
+      try {
+        await UserRepository.update(passwordModalUser.id, { password: newPassword });
+      } catch (err) {
+        console.warn('[SecuritySettingsTab] update password error:', err.message);
       }
     }
 
@@ -353,19 +352,28 @@ export const SecuritySettingsTab = ({
   /**
    * New Cashier Created Handler
    */
-  const handleUserCreated = (newUser, setAsActive) => {
+  const handleUserCreated = async (newUser, setAsActive) => {
     let updated;
     if (setAsActive) {
       updated = [
         ...usersList.map((u) => (u.isFixedAdmin ? u : { ...u, status: 'deactivated', isActiveCashier: false })),
         { ...newUser, status: 'active', isActiveCashier: true },
       ];
+      setUsersList(updated);
+      try {
+        await UserRepository.create({ ...newUser, status: 'active', isActiveCashier: true });
+      } catch (err) {
+        console.warn('[SecuritySettingsTab] create user error:', err.message);
+      }
       handleActivateCashier(newUser);
     } else {
       updated = [...usersList, newUser];
       setUsersList(updated);
-      storage.set('rms_users_list', updated);
-      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+      try {
+        await UserRepository.create(newUser);
+      } catch (err) {
+        console.warn('[SecuritySettingsTab] create user error:', err.message);
+      }
       setNotification(`New cashier account "${newUser.name}" added successfully.`);
       setTimeout(() => setNotification(''), 4000);
     }

@@ -977,3 +977,33 @@ export async function settleOrderBalance(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * DELETE /api/orders/:id
+ * Delete an order/invoice by custom id or invoiceNumber
+ */
+export async function deleteOrder(req, res, next) {
+  try {
+    const { id } = req.params;
+    let order = await Order.findOneAndDelete({ id });
+    if (!order) {
+      order = await Order.findOneAndDelete({ invoiceNumber: id });
+    }
+    if (!order && mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findByIdAndDelete(id);
+    }
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: { message: `Order with ID '${id}' not found` },
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      message: `Order #${order.invoiceNumber} deleted successfully`,
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+}

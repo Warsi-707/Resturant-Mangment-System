@@ -10,15 +10,17 @@ try {
 
 import { app } from '../src/app.js';
 import { connectDB } from '../src/config/db.js';
+import { bootstrapDatabase } from '../src/config/bootstrap.js';
 import { ensureDefaultUsers } from '../src/controllers/authController.js';
 
 let isConnected = false;
 
 // Export default serverless handler for Vercel
 export default async function handler(req, res) {
-  if (!isConnected && process.env.MONGODB_URI) {
+  if (!isConnected) {
     try {
       await connectDB();
+      await bootstrapDatabase().catch(() => {});
       await ensureDefaultUsers().catch(() => {});
       isConnected = true;
     } catch (err) {
@@ -27,3 +29,4 @@ export default async function handler(req, res) {
   }
   return app(req, res);
 }
+

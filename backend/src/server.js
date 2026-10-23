@@ -10,6 +10,7 @@ try {
 
 import { app } from './app.js';
 import { connectDB } from './config/db.js';
+import { bootstrapDatabase } from './config/bootstrap.js';
 import { ensureDefaultUsers } from './controllers/authController.js';
 import { repairDuplicateInvoiceNumbers } from './controllers/orderController.js';
 
@@ -17,16 +18,13 @@ const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
-    if (process.env.MONGODB_URI) {
-      try {
-        await connectDB();
-        await ensureDefaultUsers();
-        await repairDuplicateInvoiceNumbers().catch(() => {});
-      } catch (err) {
-        console.warn('⚠️ MongoDB connection deferred (running in resilient offline mode):', err.message);
-      }
-    } else {
-      console.log('ℹ️ MONGODB_URI not specified. Running in disconnected mode.');
+    try {
+      await connectDB();
+      await bootstrapDatabase().catch(() => {});
+      await ensureDefaultUsers().catch(() => {});
+      await repairDuplicateInvoiceNumbers().catch(() => {});
+    } catch (err) {
+      console.warn('⚠️ MongoDB connection deferred (running in resilient offline mode):', err.message);
     }
 
     const server = app.listen(PORT, () => {
