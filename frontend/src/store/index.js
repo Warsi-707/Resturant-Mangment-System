@@ -65,7 +65,7 @@ export const useAppStore = create((set, get) => ({
   updateSettings: (updates) => {
     const current = get().settings;
     const merged = mergeSettings(current, updates);
-    if (isTestEnv()) storage.set('settings', merged);
+    storage.set('settings', merged);
     set({
       settings: merged,
       orderType: merged?.pos?.defaultOrderType || merged?.defaultOrderType || get().orderType,
@@ -728,7 +728,6 @@ export const useAppStore = create((set, get) => ({
 
   // Transaction Ledger (Canonical Orders & Reversals)
   orders: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('orders', null);
     const catalogItems = storage.get('menu_items', seedMenuItems);
     const catalogAddons = storage.get('addons', seedAddons);
@@ -910,14 +909,13 @@ export const useAppStore = create((set, get) => ({
         if (tB !== tA) return tB - tA;
         return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
       });
-      if (isTestEnv()) storage.set('orders', sorted);
+      storage.set('orders', sorted);
       return sorted;
     }
     return [];
   })(),
 
   reversals: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('reversals', null);
     if (saved && Array.isArray(saved)) {
       // Deduplicate by originalOrderId, originalInvoiceNumber, or id
@@ -932,7 +930,7 @@ export const useAppStore = create((set, get) => ({
           deduped.push(r);
         }
       }
-      if (isTestEnv()) storage.set('reversals', deduped);
+      storage.set('reversals', deduped);
       return deduped;
     }
     return [];
@@ -940,17 +938,15 @@ export const useAppStore = create((set, get) => ({
 
   // Menu State: Categories, Menu Items & Add-ons
   categories: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('categories', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     return [];
   })(),
 
   items: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('menu_items', null);
     const cats = storage.get('categories', null);
-    if (saved && Array.isArray(saved)) {
+    if (saved && Array.isArray(saved) && saved.length > 0) {
       if (Array.isArray(cats) && cats.length > 0) {
         return healMiscategorizedItems(saved, cats);
       }
@@ -960,18 +956,16 @@ export const useAppStore = create((set, get) => ({
   })(),
 
   addons: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('addons', null);
-    if (saved && Array.isArray(saved)) {
+    if (saved && Array.isArray(saved) && saved.length > 0) {
       return saved;
     }
     return [];
   })(),
 
   deals: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('deals', null);
-    if (saved && Array.isArray(saved)) {
+    if (saved && Array.isArray(saved) && saved.length > 0) {
       return saved;
     }
     return [];
@@ -979,14 +973,12 @@ export const useAppStore = create((set, get) => ({
 
   // Expenses & Accounting Ledger
   expenses: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('expenses', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     return [];
   })(),
 
   expenseCategories: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('expense_categories', null);
     if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     // Auto-detect and populate categories from existing expenses if expense_categories is empty
@@ -1008,7 +1000,7 @@ export const useAppStore = create((set, get) => ({
         }
       });
       if (extracted.length > 0) {
-        if (isTestEnv()) storage.set('expense_categories', extracted);
+        storage.set('expense_categories', extracted);
         return extracted;
       }
     }
@@ -1026,7 +1018,7 @@ export const useAppStore = create((set, get) => ({
           return cid && !dataIds.has(cid);
         });
         const combined = [...unsyncedCurrent, ...data];
-        if (isTestEnv()) storage.set('expenses', combined);
+        storage.set('expenses', combined);
         set({ expenses: combined });
         return combined;
       }
@@ -1051,7 +1043,7 @@ export const useAppStore = create((set, get) => ({
     // 1. Instant optimistic state update (0ms delay)
     const current = get().expenses || [];
     const updated = [optimisticRecord, ...current.filter((e) => e.id !== tempId)];
-    if (isTestEnv()) storage.set('expenses', updated);
+    storage.set('expenses', updated);
     set({ expenses: updated });
 
     // 2. Fire background sync to backend & MongoDB Atlas without blocking UI
@@ -1064,7 +1056,7 @@ export const useAppStore = create((set, get) => ({
               ? { ...optimisticRecord, ...saved }
               : e
           );
-          if (isTestEnv()) storage.set('expenses', replaced);
+          storage.set('expenses', replaced);
           set({ expenses: replaced });
         }
       })
@@ -1085,7 +1077,7 @@ export const useAppStore = create((set, get) => ({
       }
       return e;
     });
-    if (isTestEnv()) storage.set('expenses', updated);
+    storage.set('expenses', updated);
     set({ expenses: updated });
 
     ExpenseRepository.update(id, updates)
@@ -1097,7 +1089,7 @@ export const useAppStore = create((set, get) => ({
               ? { ...e, ...saved }
               : e
           );
-          if (isTestEnv()) storage.set('expenses', synced);
+          storage.set('expenses', synced);
           set({ expenses: synced });
         }
       })
@@ -1126,7 +1118,7 @@ export const useAppStore = create((set, get) => ({
       }
       return e;
     });
-    if (isTestEnv()) storage.set('expenses', updated);
+    storage.set('expenses', updated);
     set({ expenses: updated });
 
     ExpenseRepository.void(id, voidPayload?.voidReason, {
@@ -1141,7 +1133,7 @@ export const useAppStore = create((set, get) => ({
 
   deleteExpense: (id) => {
     const updated = get().expenses.filter((e) => e.id !== id);
-    if (isTestEnv()) storage.set('expenses', updated);
+    storage.set('expenses', updated);
     set({ expenses: updated });
     ExpenseRepository.delete(id).catch((err) => {
       console.warn('[Store] Expense delete sync warning:', err.message);
@@ -1158,7 +1150,7 @@ export const useAppStore = create((set, get) => ({
           (c) => !known.has((c.name || '').trim().toLowerCase())
         );
         const merged = [...data, ...extraLocal];
-        if (isTestEnv()) storage.set('expense_categories', merged);
+        storage.set('expense_categories', merged);
         set({ expenseCategories: merged });
         return merged;
       }
@@ -1183,7 +1175,7 @@ export const useAppStore = create((set, get) => ({
         }
       });
       if (extracted.length > 0) {
-        if (isTestEnv()) storage.set('expense_categories', extracted);
+        storage.set('expense_categories', extracted);
         set({ expenseCategories: extracted });
         return extracted;
       }
@@ -1211,7 +1203,7 @@ export const useAppStore = create((set, get) => ({
             : c
         )
       : [...current, result];
-    if (isTestEnv()) storage.set('expense_categories', updated);
+    storage.set('expense_categories', updated);
     set({ expenseCategories: updated });
     return result;
   },
@@ -1229,7 +1221,7 @@ export const useAppStore = create((set, get) => ({
       }
       return c;
     });
-    if (isTestEnv()) storage.set('expense_categories', updated);
+    storage.set('expense_categories', updated);
     set({ expenseCategories: updated });
     return result;
   },
@@ -1242,21 +1234,20 @@ export const useAppStore = create((set, get) => ({
       throw err;
     }
     const updated = (get().expenseCategories || []).filter((c) => c.id !== id);
-    if (isTestEnv()) storage.set('expense_categories', updated);
+    storage.set('expense_categories', updated);
     set({ expenseCategories: updated });
   },
 
   // Dining Floorplan Tables
   tables: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('tables', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     return [];
   })(),
 
   updateTableStatus: (tableId, status, details = {}) => {
     const updated = get().tables.map((t) => (t.id === tableId ? { ...t, status, ...details } : t));
-    if (isTestEnv()) storage.set('tables', updated);
+    storage.set('tables', updated);
     set({ tables: updated });
     TableRepository.updateStatus(tableId, status, details).catch((err) => {
       console.warn('[Store] Table update status sync warning:', err.message);
@@ -1276,7 +1267,7 @@ export const useAppStore = create((set, get) => ({
           }
         : t
     );
-    if (isTestEnv()) storage.set('tables', updated);
+    storage.set('tables', updated);
     set({ tables: updated });
     TableRepository.occupy(tableId, details).catch((err) => {
       console.warn('[Store] Table occupy sync warning:', err.message);
@@ -1296,7 +1287,7 @@ export const useAppStore = create((set, get) => ({
           }
         : t
     );
-    if (isTestEnv()) storage.set('tables', updated);
+    storage.set('tables', updated);
     set({ tables: updated });
     TableRepository.release(tableId).catch((err) => {
       console.warn('[Store] Table release sync warning:', err.message);
@@ -1337,7 +1328,7 @@ export const useAppStore = create((set, get) => ({
     const updated = get().orders.map((o) =>
       o.id === orderId || o.invoiceNumber === orderId ? { ...o, kitchenStatus } : o
     );
-    if (isTestEnv()) storage.set('orders', updated);
+    storage.set('orders', updated);
     set({ orders: updated });
     OrderRepository.updateKitchenStatus(orderId, kitchenStatus).catch((err) => {
       console.warn('[Store] Kitchen status sync warning:', err.message);
@@ -1419,7 +1410,7 @@ export const useAppStore = create((set, get) => ({
       if (tB !== tA) return tB - tA;
       return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
     });
-    if (isTestEnv()) storage.set('orders', updated);
+    storage.set('orders', updated);
 
     // Create real notification for each new order with user targeting
     const isOrderAdmin = String(order.createdByRole || '').toLowerCase() === 'admin';
@@ -1440,7 +1431,7 @@ export const useAppStore = create((set, get) => ({
       targetRoles: isOrderAdmin ? ['admin'] : ['admin', 'cashier'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
-    if (isTestEnv()) storage.set('notifications', updatedNotifs);
+    storage.set('notifications', updatedNotifs);
 
     set({ orders: updated, notifications: updatedNotifs });
 
@@ -1469,7 +1460,7 @@ export const useAppStore = create((set, get) => ({
             if (tB !== tA) return tB - tA;
             return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
           });
-          if (isTestEnv()) storage.set('orders', sorted);
+          storage.set('orders', sorted);
           set({ orders: sorted });
         }
       })
@@ -1554,7 +1545,7 @@ export const useAppStore = create((set, get) => ({
       o.id === target.id || o.invoiceNumber === target.invoiceNumber ? updatedOrder : o
     );
 
-    if (isTestEnv()) storage.set('orders', updatedOrders);
+    storage.set('orders', updatedOrders);
 
     // Create real notification
     const channelDetail =
@@ -1579,7 +1570,7 @@ export const useAppStore = create((set, get) => ({
       targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
-    if (isTestEnv()) storage.set('notifications', updatedNotifs);
+    storage.set('notifications', updatedNotifs);
 
     set({ orders: updatedOrders, notifications: updatedNotifs });
 
@@ -1606,9 +1597,8 @@ export const useAppStore = create((set, get) => ({
 
   // Deletion & Audit History State
   deletionHistory: (() => {
-    if (!isTestEnv()) return [];
     const saved = storage.get('deletion_history', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     return [];
   })(),
 
@@ -1641,8 +1631,8 @@ export const useAppStore = create((set, get) => ({
         ? { ...o, status: 'reversed', reversalId: reversal.id }
         : o
     );
-    if (isTestEnv()) storage.set('reversals', updated);
-    if (isTestEnv()) storage.set('orders', updatedOrders);
+    storage.set('reversals', updated);
+    storage.set('orders', updatedOrders);
 
     // Live sync to MongoDB Atlas via ReversalRepository
     ReversalRepository.create(reversal).catch((err) => {
@@ -1690,7 +1680,7 @@ export const useAppStore = create((set, get) => ({
         ],
       };
       updatedHistory = [auditEntry, ...updatedHistory];
-      if (isTestEnv()) storage.set('deletion_history', updatedHistory);
+      storage.set('deletion_history', updatedHistory);
 
       // Persist reversal audit log to MongoDB Atlas
       AuditLogRepository.create(auditEntry).catch((err) => {
@@ -1713,7 +1703,7 @@ export const useAppStore = create((set, get) => ({
       targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
-    if (isTestEnv()) storage.set('notifications', updatedNotifs);
+    storage.set('notifications', updatedNotifs);
 
     set({
       reversals: updated,
@@ -1729,7 +1719,7 @@ export const useAppStore = create((set, get) => ({
     if (!targetOrder) return false;
 
     const remainingOrders = get().orders.filter((o) => o.id !== targetOrder.id);
-    if (isTestEnv()) storage.set('orders', remainingOrders);
+    storage.set('orders', remainingOrders);
 
     const auditEntry = {
       id: `del-inv-${Date.now()}`,
@@ -1770,7 +1760,7 @@ export const useAppStore = create((set, get) => ({
     };
 
     const updatedHistory = [auditEntry, ...(get().deletionHistory || [])];
-    if (isTestEnv()) storage.set('deletion_history', updatedHistory);
+    storage.set('deletion_history', updatedHistory);
 
     const newNotif = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -1786,7 +1776,7 @@ export const useAppStore = create((set, get) => ({
       targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
-    if (isTestEnv()) storage.set('notifications', updatedNotifs);
+    storage.set('notifications', updatedNotifs);
 
     set({
       orders: remainingOrders,
@@ -1806,7 +1796,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   clearDeletionHistory: () => {
-    if (isTestEnv()) storage.set('deletion_history', []);
+    storage.set('deletion_history', []);
     set({ deletionHistory: [] });
     AuditLogRepository.clear().catch((err) => {
       console.warn('[Store] AuditLog clear Atlas sync warning:', err.message);
@@ -1822,7 +1812,7 @@ export const useAppStore = create((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     const updated = [newRecord, ...get().categories];
-    if (isTestEnv()) storage.set('categories', updated);
+    storage.set('categories', updated);
     set({ categories: updated });
 
     // Live sync to MongoDB Atlas via CategoryRepository
@@ -1833,7 +1823,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveCats.map((c) =>
             c.id === newRecord.id || c.id === synced.id ? { ...c, ...synced } : c
           );
-          if (isTestEnv()) storage.set('categories', replaced);
+          storage.set('categories', replaced);
           set({ categories: replaced });
         }
       })
@@ -1848,7 +1838,7 @@ export const useAppStore = create((set, get) => ({
     const updated = get().categories.map((c) =>
       c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c
     );
-    if (isTestEnv()) storage.set('categories', updated);
+    storage.set('categories', updated);
     set({ categories: updated });
 
     // Live sync to MongoDB Atlas via CategoryRepository
@@ -1859,7 +1849,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveCats.map((c) =>
             c.id === id || c.id === synced.id ? { ...c, ...synced } : c
           );
-          if (isTestEnv()) storage.set('categories', replaced);
+          storage.set('categories', replaced);
           set({ categories: replaced });
         }
       })
@@ -1874,7 +1864,7 @@ export const useAppStore = create((set, get) => ({
 
   deleteCategory: (id) => {
     const updated = get().categories.filter((c) => c.id !== id);
-    if (isTestEnv()) storage.set('categories', updated);
+    storage.set('categories', updated);
     set({ categories: updated });
 
     // Live sync to MongoDB Atlas via CategoryRepository
@@ -1892,7 +1882,7 @@ export const useAppStore = create((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     const updated = [...get().items, newRecord];
-    if (isTestEnv()) storage.set('menu_items', updated);
+    storage.set('menu_items', updated);
     set({ items: updated });
 
     // Live sync to MongoDB Atlas via ItemRepository
@@ -1903,7 +1893,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveItems.map((i) =>
             i.id === newRecord.id || i.id === synced.id ? { ...i, ...synced } : i
           );
-          if (isTestEnv()) storage.set('menu_items', replaced);
+          storage.set('menu_items', replaced);
           set({ items: replaced });
         }
       })
@@ -1918,7 +1908,7 @@ export const useAppStore = create((set, get) => ({
     const updated = get().items.map((item) =>
       item.id === id ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item
     );
-    if (isTestEnv()) storage.set('menu_items', updated);
+    storage.set('menu_items', updated);
     set({ items: updated });
 
     // Live sync to MongoDB Atlas via ItemRepository
@@ -1929,7 +1919,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveItems.map((i) =>
             i.id === id || i.id === synced.id ? { ...i, ...synced } : i
           );
-          if (isTestEnv()) storage.set('menu_items', replaced);
+          storage.set('menu_items', replaced);
           set({ items: replaced });
         }
       })
@@ -1944,7 +1934,7 @@ export const useAppStore = create((set, get) => ({
 
   deleteItem: (id) => {
     const updated = get().items.filter((item) => item.id !== id);
-    if (isTestEnv()) storage.set('menu_items', updated);
+    storage.set('menu_items', updated);
     set({ items: updated });
 
     // Live sync to MongoDB Atlas via ItemRepository
@@ -1969,7 +1959,7 @@ export const useAppStore = create((set, get) => ({
       ? get().addons.filter((_, idx) => idx !== existingIndex)
       : get().addons;
     const updated = [newRecord, ...remaining];
-    if (isTestEnv()) storage.set('addons', updated);
+    storage.set('addons', updated);
     set({ addons: updated });
 
     // Live sync to MongoDB Atlas via AddonRepository
@@ -1980,7 +1970,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveAdds.map((a) =>
             a.id === newRecord.id || a.id === synced.id ? { ...a, ...synced } : a
           );
-          if (isTestEnv()) storage.set('addons', replaced);
+          storage.set('addons', replaced);
           set({ addons: replaced });
         }
       })
@@ -1997,7 +1987,7 @@ export const useAppStore = create((set, get) => ({
     const updatedRecord = { ...existing, ...updates, updatedAt: new Date().toISOString() };
     const remaining = get().addons.filter((a) => a.id !== id);
     const updated = [updatedRecord, ...remaining];
-    if (isTestEnv()) storage.set('addons', updated);
+    storage.set('addons', updated);
     set({ addons: updated });
 
     // Live sync to MongoDB Atlas via AddonRepository
@@ -2013,7 +2003,7 @@ export const useAppStore = create((set, get) => ({
   deleteAddon: (id) => {
     // 1. Remove from addons
     const updatedAddons = get().addons.filter((a) => a.id !== id);
-    if (isTestEnv()) storage.set('addons', updatedAddons);
+    storage.set('addons', updatedAddons);
 
     // 2. Safely remove reference from items and categories
     const updatedItems = get().items.map((item) => {
@@ -2022,7 +2012,7 @@ export const useAppStore = create((set, get) => ({
       }
       return item;
     });
-    if (isTestEnv()) storage.set('menu_items', updatedItems);
+    storage.set('menu_items', updatedItems);
 
     const updatedCategories = get().categories.map((cat) => {
       if (Array.isArray(cat.defaultAddonIds) && cat.defaultAddonIds.includes(id)) {
@@ -2030,7 +2020,7 @@ export const useAppStore = create((set, get) => ({
       }
       return cat;
     });
-    if (isTestEnv()) storage.set('categories', updatedCategories);
+    storage.set('categories', updatedCategories);
 
     set({ addons: updatedAddons, items: updatedItems, categories: updatedCategories });
 
@@ -2049,7 +2039,7 @@ export const useAppStore = create((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     const updated = [newRecord, ...get().deals];
-    if (isTestEnv()) storage.set('deals', updated);
+    storage.set('deals', updated);
     set({ deals: updated });
 
     // Live sync to MongoDB Atlas via DealRepository
@@ -2060,7 +2050,7 @@ export const useAppStore = create((set, get) => ({
           const replaced = liveDeals.map((d) =>
             d.id === newRecord.id || d.id === synced.id ? { ...d, ...synced } : d
           );
-          if (isTestEnv()) storage.set('deals', replaced);
+          storage.set('deals', replaced);
           set({ deals: replaced });
         }
       })
@@ -2075,7 +2065,7 @@ export const useAppStore = create((set, get) => ({
     const updated = get().deals.map((d) =>
       d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
     );
-    if (isTestEnv()) storage.set('deals', updated);
+    storage.set('deals', updated);
     set({ deals: updated });
 
     // Live sync to MongoDB Atlas via DealRepository
@@ -2090,7 +2080,7 @@ export const useAppStore = create((set, get) => ({
 
   deleteDeal: (id) => {
     const updated = get().deals.filter((d) => d.id !== id);
-    if (isTestEnv()) storage.set('deals', updated);
+    storage.set('deals', updated);
     set({ deals: updated });
 
     // Live sync to MongoDB Atlas via DealRepository
@@ -2120,7 +2110,7 @@ export const useAppStore = create((set, get) => ({
       storage.set('notifications', []);
     }
     const safeDefaults = getDefaultSettings();
-    if (isTestEnv()) storage.set('settings', safeDefaults);
+    storage.set('settings', safeDefaults);
     try {
       await clearAllImages();
     } catch {}
@@ -2206,26 +2196,26 @@ export const useAppStore = create((set, get) => ({
       // 1. Categories
       if (Array.isArray(cats)) {
         updates.categories = cats;
-        if (isTestEnv()) storage.set('categories', cats);
+        storage.set('categories', cats);
       }
 
       // 2. Menu Items
       if (Array.isArray(its)) {
         const healedItems = healMiscategorizedItems(its, updates.categories || get().categories || []);
         updates.items = healedItems;
-        if (isTestEnv()) storage.set('menu_items', healedItems);
+        storage.set('menu_items', healedItems);
       }
 
       // 3. Add-ons
       if (Array.isArray(adds)) {
         updates.addons = adds;
-        if (isTestEnv()) storage.set('addons', adds);
+        storage.set('addons', adds);
       }
 
       // 3.5. Deals
       if (Array.isArray(dls)) {
         updates.deals = dls;
-        if (isTestEnv()) storage.set('deals', dls);
+        storage.set('deals', dls);
       }
 
       // 4. Orders
@@ -2246,31 +2236,31 @@ export const useAppStore = create((set, get) => ({
           return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
         });
         updates.orders = sorted;
-        if (isTestEnv()) storage.set('orders', sorted);
+        storage.set('orders', sorted);
       }
 
       // 5. Reversals
       if (Array.isArray(revs)) {
         updates.reversals = revs;
-        if (isTestEnv()) storage.set('reversals', revs);
+        storage.set('reversals', revs);
       }
 
       // 6. Expenses
       if (Array.isArray(exps)) {
         updates.expenses = exps;
-        if (isTestEnv()) storage.set('expenses', exps);
+        storage.set('expenses', exps);
       }
 
       // 6.5 Expense Categories
       if (Array.isArray(expCats)) {
         updates.expenseCategories = expCats;
-        if (isTestEnv()) storage.set('expense_categories', expCats);
+        storage.set('expense_categories', expCats);
       }
 
       // 7. Tables
       if (Array.isArray(tbls)) {
         updates.tables = tbls;
-        if (isTestEnv()) storage.set('tables', tbls);
+        storage.set('tables', tbls);
       }
 
       // 8. Shift
@@ -2281,14 +2271,14 @@ export const useAppStore = create((set, get) => ({
       // 9. Deletion History / Audit Logs
       if (Array.isArray(auditLogs)) {
         updates.deletionHistory = auditLogs;
-        if (isTestEnv()) storage.set('deletion_history', auditLogs);
+        storage.set('deletion_history', auditLogs);
       }
 
       // 10. Settings
       if (dbSettings && typeof dbSettings === 'object' && Object.keys(dbSettings).length > 0) {
         const mergedSettings = mergeSettings(get().settings, dbSettings);
         updates.settings = mergedSettings;
-        if (isTestEnv()) storage.set('settings', mergedSettings);
+        storage.set('settings', mergedSettings);
       }
 
       if (Object.keys(updates).length > 0) {

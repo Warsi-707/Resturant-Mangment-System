@@ -56,6 +56,13 @@ export async function checkAndMigrateLegacyLocalStorage() {
     return { migrated: false, message: 'No legacy localStorage data to migrate' };
   }
 
+  // Verify backend is reachable before starting migration
+  const ping = await api.get('/health').catch(() => null);
+  if (!ping || ping.status !== 'ok') {
+    console.warn('[Migration] Backend unreachable, deferring migration to retain local data.');
+    return { migrated: false, reason: 'Backend unreachable' };
+  }
+
   console.log('[Migration] Found legacy business data in localStorage for keys:', foundKeys);
   const summary = {
     categories: 0,

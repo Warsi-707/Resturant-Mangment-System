@@ -14,14 +14,35 @@ export const createItemSchema = z.object({
   description: z.string().trim().max(500, 'Description cannot exceed 500 characters').optional().default(''),
   imageRef: z.string().trim().optional().default(''),
   status: z.enum(['active', 'inactive']).default('active').optional(),
-  basePrice: z.number().min(0, 'Base price must be a non-negative number'),
-  costPrice: z.number().min(0, 'Cost price must be a non-negative number').nullable().optional(),
+  basePrice: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0, 'Base price must be a non-negative number')).optional(),
+  price: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0)).optional(),
+  costPrice: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return null;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0, 'Cost price must be a non-negative number').nullable()).optional(),
   unitType: z.enum(['weight', 'piece', 'plate', 'volume', 'custom']).default('piece').optional(),
   baseUnit: z.string().trim().max(30).default('piece').optional(),
   unit: z.string().trim().max(50).default('Piece').optional(),
   portionOptions: z.array(portionSchema).default([]).optional(),
   addonIds: z.array(z.string().trim()).default([]).optional(),
-}).passthrough();
+}).passthrough().transform((data) => {
+  if (data.basePrice === undefined && data.price !== undefined) {
+    data.basePrice = data.price;
+  }
+  if (data.basePrice === undefined) {
+    data.basePrice = 0;
+  }
+  return data;
+});
 
 export const updateItemSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
@@ -30,14 +51,32 @@ export const updateItemSchema = z.object({
   description: z.string().trim().max(500).optional(),
   imageRef: z.string().trim().optional(),
   status: z.enum(['active', 'inactive']).optional(),
-  basePrice: z.number().min(0).optional(),
-  costPrice: z.number().min(0).nullable().optional(),
+  basePrice: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0)).optional(),
+  price: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0)).optional(),
+  costPrice: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return null;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().min(0).nullable()).optional(),
   unitType: z.enum(['weight', 'piece', 'plate', 'volume', 'custom']).optional(),
   baseUnit: z.string().trim().max(30).optional(),
   unit: z.string().trim().max(50).optional(),
   portionOptions: z.array(portionSchema).optional(),
   addonIds: z.array(z.string().trim()).optional(),
-}).passthrough();
+}).passthrough().transform((data) => {
+  if (data.basePrice === undefined && data.price !== undefined) {
+    data.basePrice = data.price;
+  }
+  return data;
+});
 
 /**
  * Express middleware to validate request bodies against a Zod schema
