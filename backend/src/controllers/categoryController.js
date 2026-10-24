@@ -140,11 +140,9 @@ export function sortCategoriesList(categories = []) {
 export async function getAllCategories(req, res, next) {
   try {
     if (!isDbConnected()) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        data: [],
-        offline: true,
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. MongoDB is required for categories.' },
       });
     }
 
@@ -183,6 +181,13 @@ export async function getAllCategories(req, res, next) {
  */
 export async function getCategoryById(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable.' },
+      });
+    }
+
     const { id } = req.params;
 
     let category = await Category.findOne({ id });
@@ -214,6 +219,13 @@ export async function getCategoryById(req, res, next) {
  */
 export async function createCategory(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot save category without MongoDB.' },
+      });
+    }
+
     const payload = { ...req.body };
 
     // Auto-generate slug if not provided
@@ -261,6 +273,13 @@ export async function createCategory(req, res, next) {
  */
 export async function updateCategory(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot update category without MongoDB.' },
+      });
+    }
+
     const { id } = req.params;
     const updates = { ...req.body };
 
@@ -321,6 +340,13 @@ export async function updateCategory(req, res, next) {
  */
 export async function deleteCategory(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot delete category without MongoDB.' },
+      });
+    }
+
     const { id } = req.params;
 
     let category = await Category.findOneAndDelete({ id });

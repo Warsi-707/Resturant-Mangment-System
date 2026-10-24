@@ -36,17 +36,13 @@ export async function bootstrapDatabase() {
       // 1. Ensure Default Users
       await ensureDefaultUsers().catch((err) => console.warn('[Bootstrap] Users seed warn:', err.message));
 
-      // 2. Ensure Categories
-      const catCount = await Category.countDocuments();
-      if (catCount === 0) {
-        for (const cat of defaultCategories) {
-          await Category.findOneAndUpdate(
-            { id: cat.id },
-            { $set: cat },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-          );
-        }
-        console.log(`[Bootstrap] Seeded ${defaultCategories.length} categories into MongoDB.`);
+      // 2. Ensure Categories (always ensure canonical categories exist)
+      for (const cat of defaultCategories) {
+        await Category.findOneAndUpdate(
+          { id: cat.id },
+          { $setOnInsert: cat },
+          { upsert: true, new: true }
+        );
       }
 
       // 3. Ensure Menu Items
@@ -55,51 +51,39 @@ export async function bootstrapDatabase() {
         for (const it of defaultItems) {
           await MenuItem.findOneAndUpdate(
             { id: it.id },
-            { $set: it },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { $setOnInsert: it },
+            { upsert: true, new: true }
           );
         }
         console.log(`[Bootstrap] Seeded ${defaultItems.length} menu items into MongoDB.`);
       }
 
-      // 4. Ensure Add-ons
-      const addonCount = await Addon.countDocuments();
-      if (addonCount === 0) {
-        for (const add of defaultAddons) {
-          await Addon.findOneAndUpdate(
-            { id: add.id },
-            { $set: add },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-          );
-        }
-        console.log(`[Bootstrap] Seeded ${defaultAddons.length} add-ons into MongoDB.`);
+      // 4. Ensure Add-ons (always ensure canonical add-ons exist)
+      for (const add of defaultAddons) {
+        await Addon.findOneAndUpdate(
+          { id: add.id },
+          { $setOnInsert: add },
+          { upsert: true, new: true }
+        );
       }
 
-      // 5. Ensure Tables
-      const tableCount = await Table.countDocuments();
-      if (tableCount === 0) {
-        for (const tbl of defaultTables) {
-          await Table.findOneAndUpdate(
-            { id: tbl.id },
-            { $set: tbl },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-          );
-        }
-        console.log(`[Bootstrap] Seeded ${defaultTables.length} tables into MongoDB.`);
+      // 5. Ensure Tables (always ensure canonical tables exist)
+      for (const tbl of defaultTables) {
+        await Table.findOneAndUpdate(
+          { id: tbl.id },
+          { $setOnInsert: tbl },
+          { upsert: true, new: true }
+        );
       }
 
-      // 6. Ensure Expense Categories
-      const expCatCount = await ExpenseCategory.countDocuments();
-      if (expCatCount === 0) {
-        for (const name of DEFAULT_EXPENSE_CATEGORIES) {
-          const catId = `exp-cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-          await ExpenseCategory.findOneAndUpdate(
-            { id: catId },
-            { $set: { id: catId, name, isDefault: true, status: 'active' } },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-          );
-        }
-        console.log(`[Bootstrap] Seeded ${DEFAULT_EXPENSE_CATEGORIES.length} expense categories into MongoDB.`);
+      // 6. Ensure Expense Categories (always ensure canonical expense categories exist)
+      for (const name of DEFAULT_EXPENSE_CATEGORIES) {
+        const catId = `exp-cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        await ExpenseCategory.findOneAndUpdate(
+          { id: catId },
+          { $setOnInsert: { id: catId, name, isDefault: true, status: 'active' } },
+          { upsert: true, new: true }
+        );
       }
 
       // 6.5. Ensure Deals

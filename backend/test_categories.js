@@ -201,14 +201,8 @@ async function runTests() {
 
   } finally {
     try {
-      // Only clean up categories created by this test, never wipe user data
+      // Only clean up test-created categories, never wipe canonical categories
       const testNames = [
-        'Rice / Biryani',
-        'Burgers & Sandwiches',
-        'Karahi & Handi',
-        'Artisan Pizza',
-        'BBQ Specials',
-        'Drinks & Beverages',
         'Test Soft Drink',
         'Test Rice',
         'Test Roll',
@@ -226,7 +220,11 @@ async function runTests() {
   }
 }
 
-runTests().catch((err) => {
-  console.error('❌ Test failed with error:', err);
-  process.exit(1);
-});
+runTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('❌ Test failed with error:', err);
+    process.exit(1);
+  });

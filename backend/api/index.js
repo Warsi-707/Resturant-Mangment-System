@@ -9,20 +9,22 @@ try {
 }
 
 import { app } from '../src/app.js';
-import { connectDB } from '../src/config/db.js';
+import { connectDB, isDbConnected } from '../src/config/db.js';
 import { bootstrapDatabase } from '../src/config/bootstrap.js';
 import { ensureDefaultUsers } from '../src/controllers/authController.js';
 
-let isConnected = false;
+let isBootstrapped = false;
 
 // Export default serverless handler for Vercel
 export default async function handler(req, res) {
-  if (!isConnected) {
+  if (!isDbConnected()) {
     try {
       await connectDB();
-      await bootstrapDatabase().catch(() => {});
-      await ensureDefaultUsers().catch(() => {});
-      isConnected = true;
+      if (!isBootstrapped) {
+        await bootstrapDatabase().catch(() => {});
+        await ensureDefaultUsers().catch(() => {});
+        isBootstrapped = true;
+      }
     } catch (err) {
       console.error('Serverless DB connection error:', err.message);
     }

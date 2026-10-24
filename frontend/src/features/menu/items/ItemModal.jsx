@@ -47,6 +47,8 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 
   // Form states
   const [name, setName] = useState(item?.name || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
   const [hasUserChangedCategory, setHasUserChangedCategory] = useState(Boolean(isEdit));
   const [hasUserChangedUnit, setHasUserChangedUnit] = useState(Boolean(isEdit));
   const [categoryName, setCategoryName] = useState(
@@ -175,59 +177,62 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault();
-    if (isCashier) return;
+    if (isCashier || isSubmitting) return;
+    setSubmitError(null);
     if (!validate()) return;
 
-    let trimmedCatName = categoryName.trim();
-    if (!trimmedCatName) {
-      if (availableCategories.length > 0) {
-        trimmedCatName = availableCategories[0];
-      } else {
-        trimmedCatName = 'Burgers';
+    setIsSubmitting(true);
+    try {
+      let trimmedCatName = categoryName.trim();
+      if (!trimmedCatName) {
+        if (availableCategories.length > 0) {
+          trimmedCatName = availableCategories[0];
+        } else {
+          trimmedCatName = 'Burgers';
+        }
       }
-    }
-    let targetCatId = '';
-    const match = categories.find(
-      (c) => c.name.toLowerCase() === trimmedCatName.toLowerCase()
-    );
+      let targetCatId = '';
+      const match = categories.find(
+        (c) => c.name.toLowerCase() === trimmedCatName.toLowerCase()
+      );
 
-    if (match) {
-      targetCatId = match.id;
-    } else {
-      // Auto-create category in store if custom/new so it persists
-      const created = addCategory({
-        name: trimmedCatName,
-        status: 'active',
-        keywords: [trimmedCatName.toLowerCase()],
-      });
-      targetCatId = created.id;
-    }
+      if (match) {
+        targetCatId = match.id;
+      } else {
+        // Auto-create category in store if custom/new so it persists to MongoDB
+        const created = await addCategory({
+          name: trimmedCatName,
+          status: 'active',
+          keywords: [trimmedCatName.toLowerCase()],
+        });
+        targetCatId = created.id;
+      }
 
-    const finalUnit = servingUnit.trim() || 'Unit';
+      const finalUnit = servingUnit.trim() || 'Unit';
 
-    const isWeightUnit =
-      finalUnit.toLowerCase().includes('kg') ||
-      finalUnit.toLowerCase().includes('gram') ||
-      finalUnit.toLowerCase().includes('500g') ||
-      finalUnit.toLowerCase().includes('half') ||
-      finalUnit.toLowerCase().includes('full');
+      const isWeightUnit =
+        finalUnit.toLowerCase().includes('kg') ||
+        finalUnit.toLowerCase().includes('gram') ||
+        finalUnit.toLowerCase().includes('500g') ||
+        finalUnit.toLowerCase().includes('half') ||
+        finalUnit.toLowerCase().includes('full');
 
-    const isVolumeUnit =
-      finalUnit.toLowerCase().includes('bottle') ||
-      finalUnit.toLowerCase().includes('can') ||
-      finalUnit.toLowerCase().includes('glass') ||
-      finalUnit.toLowerCase().includes('cup') ||
-      finalUnit.toLowerCase().includes('liter') ||
-      finalUnit.toLowerCase().includes('litre') ||
-      finalUnit.toLowerCase().includes('ml');
+      const isVolumeUnit =
+        finalUnit.toLowerCase().includes('bottle') ||
+        finalUnit.toLowerCase().includes('can') ||
+        finalUnit.toLowerCase().includes('glass') ||
+        finalUnit.toLowerCase().includes('cup') ||
+        finalUnit.toLowerCase().includes('liter') ||
+        finalUnit.toLowerCase().includes('litre') ||
+        finalUnit.toLowerCase().includes('ml');
 
-    // Persist extra addons to store
-    const resolvedAddonIds = [];
-    const formattedAddons = extraAddons
-      .filter((ea) => Number(ea.price) > 0 && ea.name?.trim())
-      .map((ea) => {
+      // Persist extra addons to store
+      const resolvedAddonIds = [];
+      const formattedAddons = [];
+      const activeExtraAddons = extraAddons.filter((ea) => Number(ea.price) > 0 && ea.name?.trim());
+      for (const ea of activeExtraAddons) {
         const priceNum = Number(ea.price) || 0;
         const matchedStoreAddon = (addons || []).find(
           (sa) => sa && (sa.id === ea.id || sa.name?.trim().toLowerCase() === ea.name?.trim().toLowerCase())
@@ -242,7 +247,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
         const addonId = ea.id || matchedStoreAddon?.id;
 
         if (typeof addAddon === 'function') {
-          const registered = addAddon({
+          const registered = await addAddon({
             id: addonId,
             name: ea.name.trim(),
             price: priceNum,
@@ -254,41 +259,47 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
         } else if (addonId) {
           resolvedAddonIds.push(addonId);
         }
-        return {
+        formattedAddons.push({
           id: addonId,
           name: ea.name.trim(),
           price: priceNum,
           costPrice: resolvedCost,
-        };
-      });
+        });
+      }
 
-    const finalBasePrice = Math.round(parseFloat(basePrice) || 0);
-    const finalCostPrice = costPrice.trim() !== '' && !isNaN(Number(costPrice)) ? Math.round(parseFloat(costPrice)) : null;
+      const finalBasePrice = Math.round(parseFloat(basePrice) || 0);
+      const finalCostPrice = costPrice.trim() !== '' && !isNaN(Number(costPrice)) ? Math.round(parseFloat(costPrice)) : null;
 
-    const payload = {
-      name: name.trim(),
-      categoryId: targetCatId,
-      categoryName: trimmedCatName,
-      basePrice: finalBasePrice,
-      costPrice: finalCostPrice,
-      unit: finalUnit,
-      baseUnit: finalUnit,
-      unitType: isWeightUnit ? 'weight' : isVolumeUnit ? 'volume' : 'piece',
-      description: description.trim(),
-      imageRef,
-      status: item?.status || 'active',
-      addons: formattedAddons,
-      addonIds: resolvedAddonIds,
-      portionOptions: item?.portionOptions || [],
-    };
+      const payload = {
+        name: name.trim(),
+        categoryId: targetCatId,
+        categoryName: trimmedCatName,
+        basePrice: finalBasePrice,
+        costPrice: finalCostPrice,
+        unit: finalUnit,
+        baseUnit: finalUnit,
+        unitType: isWeightUnit ? 'weight' : isVolumeUnit ? 'volume' : 'piece',
+        description: description.trim(),
+        imageRef,
+        status: item?.status || 'active',
+        addons: formattedAddons,
+        addonIds: resolvedAddonIds,
+        portionOptions: item?.portionOptions || [],
+      };
 
-    if (isEdit) {
-      updateItem(item.id, payload);
-    } else {
-      addItem(payload);
+      if (isEdit) {
+        await updateItem(item.id, payload);
+      } else {
+        await addItem(payload);
+      }
+
+      onClose();
+    } catch (err) {
+      console.error('[ItemModal] Save item failed:', err);
+      setSubmitError(err?.message || 'Failed to save item to database. Please check backend connection.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
   };
 
   return (
@@ -313,6 +324,11 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
         }}
         className="space-y-2 text-slate-800"
       >
+        {submitError && (
+          <div className="p-2.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
+            {submitError}
+          </div>
+        )}
         {/* Item Photo */}
         <div className="flex flex-col gap-1 w-full">
           <label className="text-[11px] font-bold text-slate-800 select-none">
@@ -711,15 +727,17 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-4 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="h-8 px-4 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Item
+            {isSubmitting ? 'Saving...' : 'Save Item'}
           </button>
         </div>
       </form>

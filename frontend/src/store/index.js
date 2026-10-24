@@ -936,73 +936,58 @@ export const useAppStore = create((set, get) => ({
     return [];
   })(),
 
-  // Menu State: Categories, Menu Items & Add-ons
+  // Menu State: Categories, Menu Items & Add-ons (MongoDB Atlas canonical single source of truth)
   categories: (() => {
-    const saved = storage.get('categories', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    if (isTestEnv()) {
+      const saved = storage.get('categories', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    }
     return [];
   })(),
 
   items: (() => {
-    const saved = storage.get('menu_items', null);
-    const cats = storage.get('categories', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      if (Array.isArray(cats) && cats.length > 0) {
-        return healMiscategorizedItems(saved, cats);
+    if (isTestEnv()) {
+      const saved = storage.get('menu_items', null);
+      const cats = storage.get('categories', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) {
+        if (Array.isArray(cats) && cats.length > 0) {
+          return healMiscategorizedItems(saved, cats);
+        }
+        return saved;
       }
-      return saved;
     }
     return [];
   })(),
 
   addons: (() => {
-    const saved = storage.get('addons', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      return saved;
+    if (isTestEnv()) {
+      const saved = storage.get('addons', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     }
     return [];
   })(),
 
   deals: (() => {
-    const saved = storage.get('deals', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      return saved;
+    if (isTestEnv()) {
+      const saved = storage.get('deals', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     }
     return [];
   })(),
 
   // Expenses & Accounting Ledger
   expenses: (() => {
-    const saved = storage.get('expenses', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    if (isTestEnv()) {
+      const saved = storage.get('expenses', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    }
     return [];
   })(),
 
   expenseCategories: (() => {
-    const saved = storage.get('expense_categories', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
-    // Auto-detect and populate categories from existing expenses if expense_categories is empty
-    const exps = storage.get('expenses', []);
-    if (Array.isArray(exps) && exps.length > 0) {
-      const seen = new Set();
-      const extracted = [];
-      exps.forEach((e) => {
-        const name = (e.categoryNameSnapshot || e.category || '').trim();
-        if (name && !seen.has(name.toLowerCase())) {
-          seen.add(name.toLowerCase());
-          extracted.push({
-            id: e.categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-            name,
-            description: '',
-            status: 'active',
-            createdAt: e.createdAt || new Date().toISOString(),
-          });
-        }
-      });
-      if (extracted.length > 0) {
-        storage.set('expense_categories', extracted);
-        return extracted;
-      }
+    if (isTestEnv()) {
+      const saved = storage.get('expense_categories', null);
+      if (saved && Array.isArray(saved) && saved.length > 0) return saved;
     }
     return [];
   })(),
@@ -1028,76 +1013,32 @@ export const useAppStore = create((set, get) => ({
     return get().expenses;
   },
 
-  addExpense: (expense) => {
-    const randomSuffix = Math.random().toString(36).substring(2, 6);
-    const tempId = expense.id || `exp-${Date.now()}-${randomSuffix}`;
-    const optimisticRecord = {
-      ...expense,
-      id: tempId,
-      status: expense.status || 'ACTIVE',
-      expenseDate: expense.expenseDate || new Date().toISOString(),
-      createdAt: expense.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+  addExpense: async (expense) => {
+    const synced = await ExpenseRepository.create(expense);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to save expense in MongoDB');
+    }
 
-    // 1. Instant optimistic state update (0ms delay)
     const current = get().expenses || [];
-    const updated = [optimisticRecord, ...current.filter((e) => e.id !== tempId)];
-    storage.set('expenses', updated);
+    const updated = [synced, ...current.filter((e) => e.id !== synced.id && e.id !== expense.id)];
     set({ expenses: updated });
 
-    // 2. Fire background sync to backend & MongoDB Atlas without blocking UI
-    ExpenseRepository.create(optimisticRecord)
-      .then((saved) => {
-        if (saved && (saved.id || saved._id)) {
-          const latest = get().expenses || [];
-          const replaced = latest.map((e) =>
-            e.id === tempId || e.id === saved.id || (saved._id && e._id === saved._id)
-              ? { ...optimisticRecord, ...saved }
-              : e
-          );
-          storage.set('expenses', replaced);
-          set({ expenses: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Expense background sync warning:', err.message);
-      });
-
-    return optimisticRecord;
+    return synced;
   },
 
-  updateExpense: (id, updates) => {
+  updateExpense: async (id, updates) => {
+    const synced = await ExpenseRepository.update(id, updates);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to update expense in MongoDB');
+    }
+
     const current = get().expenses || [];
-    let updatedItem = null;
-    const updated = current.map((e) => {
-      if (e.id === id || e._id === id) {
-        updatedItem = { ...e, ...updates, updatedAt: new Date().toISOString() };
-        return updatedItem;
-      }
-      return e;
-    });
-    storage.set('expenses', updated);
+    const updated = current.map((e) =>
+      e.id === id || e.id === synced.id ? { ...e, ...synced } : e
+    );
     set({ expenses: updated });
 
-    ExpenseRepository.update(id, updates)
-      .then((saved) => {
-        if (saved && (saved.id || saved._id)) {
-          const latest = get().expenses || [];
-          const synced = latest.map((e) =>
-            e.id === id || e.id === saved.id || (saved._id && e._id === saved._id)
-              ? { ...e, ...saved }
-              : e
-          );
-          storage.set('expenses', synced);
-          set({ expenses: synced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Expense update background sync warning:', err.message);
-      });
-
-    return updatedItem;
+    return synced;
   },
 
   voidExpense: (id, voidPayload) => {
@@ -1186,56 +1127,38 @@ export const useAppStore = create((set, get) => ({
   },
 
   addExpenseCategory: async (category) => {
-    let result = category;
-    try {
-      result = await ExpenseRepository.createCategory(category);
-    } catch (err) {
-      console.warn('[Store] ExpenseCategory create warning:', err.message);
+    const synced = await ExpenseRepository.createCategory(category);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to create expense category in MongoDB');
     }
+
     const current = get().expenseCategories || [];
-    const exists = current.some(
-      (c) => c.id === result.id || (c.name || '').trim().toLowerCase() === (result.name || '').trim().toLowerCase()
-    );
-    const updated = exists
-      ? current.map((c) =>
-          c.id === result.id || (c.name || '').trim().toLowerCase() === (result.name || '').trim().toLowerCase()
-            ? { ...c, ...result }
-            : c
-        )
-      : [...current, result];
-    storage.set('expense_categories', updated);
+    const updated = [synced, ...current.filter((c) => c.id !== synced.id && c.id !== category.id)];
     set({ expenseCategories: updated });
-    return result;
+
+    return synced;
   },
 
   updateExpenseCategory: async (id, updates) => {
-    let result = null;
-    try {
-      result = await ExpenseRepository.updateCategory(id, updates);
-    } catch (err) {
-      console.warn('[Store] ExpenseCategory update warning:', err.message);
+    const synced = await ExpenseRepository.updateCategory(id, updates);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to update expense category in MongoDB');
     }
-    const updated = (get().expenseCategories || []).map((c) => {
-      if (c.id === id) {
-        return result || { ...c, ...updates };
-      }
-      return c;
-    });
-    storage.set('expense_categories', updated);
+
+    const current = get().expenseCategories || [];
+    const updated = current.map((c) =>
+      c.id === id || c.id === synced.id ? { ...c, ...synced } : c
+    );
     set({ expenseCategories: updated });
-    return result;
+
+    return synced;
   },
 
   deleteExpenseCategory: async (id) => {
-    try {
-      await ExpenseRepository.deleteCategory(id);
-    } catch (err) {
-      console.warn('[Store] ExpenseCategory delete warning:', err.message);
-      throw err;
-    }
+    await ExpenseRepository.deleteCategory(id);
     const updated = (get().expenseCategories || []).filter((c) => c.id !== id);
-    storage.set('expense_categories', updated);
     set({ expenseCategories: updated });
+    return true;
   },
 
   // Dining Floorplan Tables
@@ -1804,289 +1727,177 @@ export const useAppStore = create((set, get) => ({
   },
 
   // ================= CATEGORY ACTIONS =================
-  addCategory: (category) => {
-    const newRecord = {
-      ...category,
-      id: category.id || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: category.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [newRecord, ...get().categories];
-    storage.set('categories', updated);
+  addCategory: async (category) => {
+    const synced = await CategoryRepository.create(category);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to create category in MongoDB');
+    }
+
+    const current = get().categories || [];
+    const updated = [synced, ...current.filter((c) => c.id !== synced.id && c.id !== category.id)];
     set({ categories: updated });
 
-    // Live sync to MongoDB Atlas via CategoryRepository
-    CategoryRepository.create(newRecord)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveCats = get().categories || [];
-          const replaced = liveCats.map((c) =>
-            c.id === newRecord.id || c.id === synced.id ? { ...c, ...synced } : c
-          );
-          storage.set('categories', replaced);
-          set({ categories: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Category Atlas sync warning:', err.message);
-      });
-
-    return newRecord;
+    return synced;
   },
 
-  updateCategory: (id, updates) => {
-    const updated = get().categories.map((c) =>
-      c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c
+  updateCategory: async (id, updates) => {
+    const synced = await CategoryRepository.update(id, updates);
+    if (!synced || !synced.id) {
+      throw new Error('Failed to update category in MongoDB');
+    }
+
+    const current = get().categories || [];
+    const updated = current.map((c) =>
+      c.id === id || c.id === synced.id ? { ...c, ...synced } : c
     );
-    storage.set('categories', updated);
     set({ categories: updated });
 
-    // Live sync to MongoDB Atlas via CategoryRepository
-    CategoryRepository.update(id, updates)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveCats = get().categories || [];
-          const replaced = liveCats.map((c) =>
-            c.id === id || c.id === synced.id ? { ...c, ...synced } : c
-          );
-          storage.set('categories', replaced);
-          set({ categories: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Category update Atlas sync warning:', err.message);
-      });
+    return synced;
   },
 
-  setCategoryStatus: (id, status) => {
-    get().updateCategory(id, { status });
+  setCategoryStatus: async (id, status) => {
+    return await get().updateCategory(id, { status });
   },
 
-  deleteCategory: (id) => {
-    const updated = get().categories.filter((c) => c.id !== id);
-    storage.set('categories', updated);
+  deleteCategory: async (id) => {
+    await CategoryRepository.delete(id);
+    const updated = (get().categories || []).filter((c) => c.id !== id);
     set({ categories: updated });
-
-    // Live sync to MongoDB Atlas via CategoryRepository
-    CategoryRepository.delete(id).catch((err) => {
-      console.warn('[Store] Category delete Atlas sync warning:', err.message);
-    });
+    return true;
   },
 
   // ================= MENU ITEM ACTIONS =================
-  addItem: (item) => {
-    const newRecord = {
-      ...item,
-      id: item.id || `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: item.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [...get().items, newRecord];
-    storage.set('menu_items', updated);
+  addItem: async (item) => {
+    const synced = await ItemRepository.create(item);
+    if (!synced) {
+      throw new Error('Failed to create item in MongoDB');
+    }
+    const current = get().items || [];
+    const updated = [synced, ...current.filter((i) => i.id !== synced.id && i.id !== item.id)];
+    if (isTestEnv()) {
+      storage.set('menu_items', updated);
+    }
     set({ items: updated });
-
-    // Live sync to MongoDB Atlas via ItemRepository
-    ItemRepository.create(newRecord)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveItems = get().items || [];
-          const replaced = liveItems.map((i) =>
-            i.id === newRecord.id || i.id === synced.id ? { ...i, ...synced } : i
-          );
-          storage.set('menu_items', replaced);
-          set({ items: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Item Atlas sync warning:', err.message);
-      });
-
-    return newRecord;
+    return synced;
   },
 
-  updateItem: (id, updates) => {
-    const updated = get().items.map((item) =>
-      item.id === id ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item
-    );
-    storage.set('menu_items', updated);
+  updateItem: async (id, updates) => {
+    const synced = await ItemRepository.update(id, updates);
+    const current = get().items || [];
+    const updated = current.map((i) => (i.id === id ? { ...i, ...synced, ...updates } : i));
+    if (isTestEnv()) {
+      storage.set('menu_items', updated);
+    }
     set({ items: updated });
-
-    // Live sync to MongoDB Atlas via ItemRepository
-    ItemRepository.update(id, updates)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveItems = get().items || [];
-          const replaced = liveItems.map((i) =>
-            i.id === id || i.id === synced.id ? { ...i, ...synced } : i
-          );
-          storage.set('menu_items', replaced);
-          set({ items: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Item update Atlas sync warning:', err.message);
-      });
+    return synced;
   },
 
-  setItemStatus: (id, status) => {
-    get().updateItem(id, { status });
+  setItemStatus: async (id, status) => {
+    return await get().updateItem(id, { status });
   },
 
-  deleteItem: (id) => {
-    const updated = get().items.filter((item) => item.id !== id);
-    storage.set('menu_items', updated);
+  deleteItem: async (id) => {
+    await ItemRepository.delete(id);
+    const updated = (get().items || []).filter((item) => item.id !== id);
+    if (isTestEnv()) {
+      storage.set('menu_items', updated);
+    }
     set({ items: updated });
-
-    // Live sync to MongoDB Atlas via ItemRepository
-    ItemRepository.delete(id).catch((err) => {
-      console.warn('[Store] Item delete Atlas sync warning:', err.message);
-    });
+    return true;
   },
 
   // ================= ADD-ON ACTIONS =================
-  addAddon: (addon) => {
-    const existingIndex = get().addons.findIndex(
-      (a) => a && (a.id === addon.id || (a.name && addon.name && a.name.trim().toLowerCase() === addon.name.trim().toLowerCase()))
-    );
-    const newRecord = {
-      ...(existingIndex >= 0 ? get().addons[existingIndex] : {}),
-      ...addon,
-      id: addon.id || (existingIndex >= 0 ? get().addons[existingIndex].id : `addon-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`),
-      createdAt: addon.createdAt || (existingIndex >= 0 ? get().addons[existingIndex].createdAt : new Date().toISOString()),
-      updatedAt: new Date().toISOString(),
-    };
-    const remaining = existingIndex >= 0
-      ? get().addons.filter((_, idx) => idx !== existingIndex)
-      : get().addons;
-    const updated = [newRecord, ...remaining];
-    storage.set('addons', updated);
+  addAddon: async (addon) => {
+    const synced = await AddonRepository.create(addon);
+    if (!synced) {
+      throw new Error('Failed to create addon in MongoDB');
+    }
+    const current = get().addons || [];
+    const updated = [synced, ...current.filter((a) => a.id !== synced.id && a.id !== addon.id)];
+    if (isTestEnv()) {
+      storage.set('addons', updated);
+    }
     set({ addons: updated });
-
-    // Live sync to MongoDB Atlas via AddonRepository
-    AddonRepository.create(newRecord)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveAdds = get().addons || [];
-          const replaced = liveAdds.map((a) =>
-            a.id === newRecord.id || a.id === synced.id ? { ...a, ...synced } : a
-          );
-          storage.set('addons', replaced);
-          set({ addons: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Addon Atlas sync warning:', err.message);
-      });
-
-    return newRecord;
+    return synced;
   },
 
-  updateAddon: (id, updates) => {
-    const existing = get().addons.find((a) => a.id === id);
-    if (!existing) return;
-    const updatedRecord = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    const remaining = get().addons.filter((a) => a.id !== id);
-    const updated = [updatedRecord, ...remaining];
-    storage.set('addons', updated);
+  updateAddon: async (id, updates) => {
+    const synced = await AddonRepository.update(id, updates);
+    const current = get().addons || [];
+    const updated = current.map((a) => (a.id === id ? { ...a, ...synced, ...updates } : a));
+    if (isTestEnv()) {
+      storage.set('addons', updated);
+    }
     set({ addons: updated });
-
-    // Live sync to MongoDB Atlas via AddonRepository
-    AddonRepository.update(id, updates).catch((err) => {
-      console.warn('[Store] Addon update Atlas sync warning:', err.message);
-    });
+    return synced;
   },
 
-  setAddonStatus: (id, status) => {
-    get().updateAddon(id, { status });
+  setAddonStatus: async (id, status) => {
+    return await get().updateAddon(id, { status });
   },
 
-  deleteAddon: (id) => {
-    // 1. Remove from addons
-    const updatedAddons = get().addons.filter((a) => a.id !== id);
-    storage.set('addons', updatedAddons);
-
-    // 2. Safely remove reference from items and categories
-    const updatedItems = get().items.map((item) => {
+  deleteAddon: async (id) => {
+    await AddonRepository.delete(id);
+    const updatedAddons = (get().addons || []).filter((a) => a.id !== id);
+    const updatedItems = (get().items || []).map((item) => {
       if (Array.isArray(item.addonIds) && item.addonIds.includes(id)) {
         return { ...item, addonIds: item.addonIds.filter((aid) => aid !== id) };
       }
       return item;
     });
-    storage.set('menu_items', updatedItems);
-
-    const updatedCategories = get().categories.map((cat) => {
+    const updatedCategories = (get().categories || []).map((cat) => {
       if (Array.isArray(cat.defaultAddonIds) && cat.defaultAddonIds.includes(id)) {
         return { ...cat, defaultAddonIds: cat.defaultAddonIds.filter((aid) => aid !== id) };
       }
       return cat;
     });
-    storage.set('categories', updatedCategories);
-
+    if (isTestEnv()) {
+      storage.set('addons', updatedAddons);
+      storage.set('menu_items', updatedItems);
+      storage.set('categories', updatedCategories);
+    }
     set({ addons: updatedAddons, items: updatedItems, categories: updatedCategories });
-
-    // Live sync to MongoDB Atlas via AddonRepository
-    AddonRepository.delete(id).catch((err) => {
-      console.warn('[Store] Addon delete Atlas sync warning:', err.message);
-    });
+    return true;
   },
 
   // ================= DEAL ACTIONS =================
-  addDeal: (deal) => {
-    const newRecord = {
-      ...deal,
-      id: deal.id || `deal-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      createdAt: deal.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [newRecord, ...get().deals];
-    storage.set('deals', updated);
+  addDeal: async (deal) => {
+    const synced = await DealRepository.create(deal);
+    if (!synced) {
+      throw new Error('Failed to create deal in MongoDB');
+    }
+    const current = get().deals || [];
+    const updated = [synced, ...current.filter((d) => d.id !== synced.id && d.id !== deal.id)];
+    if (isTestEnv()) {
+      storage.set('deals', updated);
+    }
     set({ deals: updated });
-
-    // Live sync to MongoDB Atlas via DealRepository
-    DealRepository.create(newRecord)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveDeals = get().deals || [];
-          const replaced = liveDeals.map((d) =>
-            d.id === newRecord.id || d.id === synced.id ? { ...d, ...synced } : d
-          );
-          storage.set('deals', replaced);
-          set({ deals: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Deal Atlas sync warning:', err.message);
-      });
-
-    return newRecord;
+    return synced;
   },
 
-  updateDeal: (id, updates) => {
-    const updated = get().deals.map((d) =>
-      d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
-    );
-    storage.set('deals', updated);
+  updateDeal: async (id, updates) => {
+    const synced = await DealRepository.update(id, updates);
+    const current = get().deals || [];
+    const updated = current.map((d) => (d.id === id ? { ...d, ...synced, ...updates } : d));
+    if (isTestEnv()) {
+      storage.set('deals', updated);
+    }
     set({ deals: updated });
-
-    // Live sync to MongoDB Atlas via DealRepository
-    DealRepository.update(id, updates).catch((err) => {
-      console.warn('[Store] Deal update Atlas sync warning:', err.message);
-    });
+    return synced;
   },
 
-  setDealStatus: (id, status) => {
-    get().updateDeal(id, { status });
+  setDealStatus: async (id, status) => {
+    return await get().updateDeal(id, { status });
   },
 
-  deleteDeal: (id) => {
-    const updated = get().deals.filter((d) => d.id !== id);
-    storage.set('deals', updated);
+  deleteDeal: async (id) => {
+    await DealRepository.delete(id);
+    const updated = (get().deals || []).filter((d) => d.id !== id);
+    if (isTestEnv()) {
+      storage.set('deals', updated);
+    }
     set({ deals: updated });
-
-    // Live sync to MongoDB Atlas via DealRepository
-    DealRepository.delete(id).catch((err) => {
-      console.warn('[Store] Deal delete Atlas sync warning:', err.message);
-    });
+    return true;
   },
 
   // Complete wipe of all restaurant data (categories, items, addons, deals, orders, reversals, expenses, tables)
@@ -2195,55 +2006,27 @@ export const useAppStore = create((set, get) => ({
 
       // 1. Categories
       if (Array.isArray(cats)) {
-        const localCats = get().categories || [];
-        const serverCatIds = new Set(cats.map((c) => c.id || c._id));
-        const unsyncedCats = localCats.filter((loc) => loc?.id && !serverCatIds.has(loc.id));
-        for (const un of unsyncedCats) {
-          CategoryRepository.create(un).catch(() => {});
-        }
-        const combinedCats = [...cats, ...unsyncedCats];
-        updates.categories = combinedCats;
-        storage.set('categories', combinedCats);
+        updates.categories = cats;
+        if (isTestEnv()) storage.set('categories', cats);
       }
 
       // 2. Menu Items
       if (Array.isArray(its)) {
-        const localItems = get().items || [];
-        const serverItemIds = new Set(its.map((i) => i.id || i._id));
-        const unsyncedItems = localItems.filter((loc) => loc?.id && !serverItemIds.has(loc.id));
-        for (const un of unsyncedItems) {
-          ItemRepository.create(un).catch(() => {});
-        }
-        const combinedItems = [...its, ...unsyncedItems];
-        const healedItems = healMiscategorizedItems(combinedItems, updates.categories || get().categories || []);
+        const healedItems = healMiscategorizedItems(its, updates.categories || get().categories || []);
         updates.items = healedItems;
-        storage.set('menu_items', healedItems);
+        if (isTestEnv()) storage.set('menu_items', healedItems);
       }
 
       // 3. Add-ons
       if (Array.isArray(adds)) {
-        const localAdds = get().addons || [];
-        const serverAddIds = new Set(adds.map((a) => a.id || a._id));
-        const unsyncedAdds = localAdds.filter((loc) => loc?.id && !serverAddIds.has(loc.id));
-        for (const un of unsyncedAdds) {
-          AddonRepository.create(un).catch(() => {});
-        }
-        const combinedAdds = [...adds, ...unsyncedAdds];
-        updates.addons = combinedAdds;
-        storage.set('addons', combinedAdds);
+        updates.addons = adds;
+        if (isTestEnv()) storage.set('addons', adds);
       }
 
       // 3.5. Deals
       if (Array.isArray(dls)) {
-        const localDeals = get().deals || [];
-        const serverDealIds = new Set(dls.map((d) => d.id || d._id));
-        const unsyncedDeals = localDeals.filter((loc) => loc?.id && !serverDealIds.has(loc.id));
-        for (const un of unsyncedDeals) {
-          DealRepository.create(un).catch(() => {});
-        }
-        const combinedDeals = [...dls, ...unsyncedDeals];
-        updates.deals = combinedDeals;
-        storage.set('deals', combinedDeals);
+        updates.deals = dls;
+        if (isTestEnv()) storage.set('deals', dls);
       }
 
       // 4. Orders
@@ -2295,28 +2078,14 @@ export const useAppStore = create((set, get) => ({
 
       // 6. Expenses
       if (Array.isArray(exps)) {
-        const localExpenses = get().expenses || [];
-        const serverExpIds = new Set(exps.map((e) => e.id || e._id));
-        const unsyncedExpenses = localExpenses.filter((loc) => loc?.id && !serverExpIds.has(loc.id));
-        for (const un of unsyncedExpenses) {
-          ExpenseRepository.create(un).catch(() => {});
-        }
-        const combinedExpenses = [...exps, ...unsyncedExpenses];
-        updates.expenses = combinedExpenses;
-        storage.set('expenses', combinedExpenses);
+        updates.expenses = exps;
+        if (isTestEnv()) storage.set('expenses', exps);
       }
 
       // 6.5 Expense Categories
       if (Array.isArray(expCats)) {
-        const localExpCats = get().expenseCategories || [];
-        const serverCatIds = new Set(expCats.map((c) => c.id || c._id));
-        const unsyncedCats = localExpCats.filter((loc) => loc?.id && !serverCatIds.has(loc.id));
-        for (const un of unsyncedCats) {
-          ExpenseRepository.createCategory(un).catch(() => {});
-        }
-        const combinedCats = [...expCats, ...unsyncedCats];
-        updates.expenseCategories = combinedCats;
-        storage.set('expense_categories', combinedCats);
+        updates.expenseCategories = expCats;
+        if (isTestEnv()) storage.set('expense_categories', expCats);
       }
 
       // 7. Tables

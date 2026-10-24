@@ -89,6 +89,7 @@ export const AddExpenseModal = ({
   // UI States
   const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Derive Entered By from authenticated user
   const isUserCashier = Boolean(
@@ -181,8 +182,8 @@ export const AddExpenseModal = ({
     setAttachmentPreview('');
   };
 
-  // Form Submit (Instant 0ms submission)
-  const handleSubmit = (e) => {
+  // Form Submit
+  const handleSubmit = async (e) => {
     if (e && e.preventDefault) {
       e.preventDefault();
     }
@@ -205,6 +206,8 @@ export const AddExpenseModal = ({
       return;
     }
 
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const payload = {
         expenseDate: toLocalExpenseIsoString(expenseDate),
@@ -224,9 +227,9 @@ export const AddExpenseModal = ({
       };
 
       if (isEditing) {
-        updateExpense(expenseToEdit.id, payload);
+        await updateExpense(expenseToEdit.id, payload);
       } else {
-        addExpense(payload);
+        await addExpense(payload);
       }
 
       // Auto-register category into configured expense categories if not already present
@@ -237,11 +240,13 @@ export const AddExpenseModal = ({
           (c) => (c.name || '').trim().toLowerCase() === cleanCat.toLowerCase()
         );
         if (!exists) {
-          addExpenseCategory({
-            name: cleanCat,
-            description: '',
-            status: 'active',
-          }).catch(() => {});
+          try {
+            await addExpenseCategory({
+              name: cleanCat,
+              description: '',
+              status: 'active',
+            });
+          } catch {}
         }
       }
 
@@ -251,6 +256,8 @@ export const AddExpenseModal = ({
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save expense. Please check input values.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -633,17 +640,18 @@ export const AddExpenseModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/70 rounded-full transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/70 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isUploading}
+            disabled={isUploading || isSubmitting}
             className="flex items-center gap-1.5 px-5 py-2 bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-60 text-white text-xs font-bold rounded-full shadow-xs transition-colors cursor-pointer"
           >
-            <span>{isEditing ? 'Save Changes' : 'Post Expense'}</span>
+            <span>{isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Post Expense'}</span>
           </button>
         </div>
       </div>

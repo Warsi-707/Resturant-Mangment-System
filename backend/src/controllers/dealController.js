@@ -9,11 +9,9 @@ import { isCashierRequest } from '../middleware/authMiddleware.js';
 export async function getAllDeals(req, res, next) {
   try {
     if (!isDbConnected()) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        data: [],
-        offline: true,
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. MongoDB is required for deals.' },
       });
     }
 

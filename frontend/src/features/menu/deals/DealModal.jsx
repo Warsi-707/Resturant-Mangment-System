@@ -44,6 +44,8 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
   });
 
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
   // Component adder states
   const [selectedEntityId, setSelectedEntityId] = useState('');
@@ -279,9 +281,10 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault();
-    if (isCashier) return;
+    if (isCashier || isSubmitting) return;
+    setSubmitError(null);
     if (!validate()) return;
 
     const dealPayload = {
@@ -294,13 +297,20 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
       includedItems,
     };
 
-    if (isEdit) {
-      updateDeal(deal.id, dealPayload);
-    } else {
-      addDeal(dealPayload);
+    setIsSubmitting(true);
+    try {
+      if (isEdit) {
+        await updateDeal(deal.id, dealPayload);
+      } else {
+        await addDeal(dealPayload);
+      }
+      onClose();
+    } catch (err) {
+      console.error('[DealModal] Save failed:', err);
+      setSubmitError(err?.message || 'Failed to save deal. Please check backend connection.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
   };
 
   return (
@@ -319,6 +329,11 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
         }}
         className="space-y-2 text-slate-800"
       >
+        {submitError && (
+          <div className="p-2.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
+            {submitError}
+          </div>
+        )}
         {/* Deal Photo */}
         <div className="flex flex-col gap-1 w-full">
           <label className="text-[11px] font-bold text-slate-800 select-none">
@@ -650,15 +665,17 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-4 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="h-8 px-4 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Deal
+            {isSubmitting ? 'Saving...' : 'Save Deal'}
           </button>
         </div>
       </form>

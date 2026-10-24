@@ -128,17 +128,9 @@ export async function getAllExpenses(req, res, next) {
     const actor = resolveActor(req);
 
     if (!isDbConnected()) {
-      return res.status(200).json({
-        success: true,
-        message: 'Database offline. Operating in local storage mode.',
-        data: [],
-        summary: {
-          totalExpenses: 0,
-          cashExpenses: 0,
-          onlineExpenses: 0,
-          activeCount: 0,
-          voidedCount: 0,
-        },
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. MongoDB is required for expenses.' },
       });
     }
 
@@ -347,12 +339,14 @@ export async function createExpense(req, res, next) {
     if (!payload.description && payload.note) {
       payload.description = payload.note;
     }
-    payload.categoryNameSnapshot = payload.category;
-
-    let expense = payload;
-    if (isDbConnected()) {
-      expense = await Expense.create(payload);
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot save expense without MongoDB.' },
+      });
     }
+
+    const expense = await Expense.create(payload);
 
     return res.status(201).json({
       success: true,
@@ -557,7 +551,10 @@ export async function getAllCategories(req, res, next) {
   try {
     await ensureDb();
     if (!isDbConnected()) {
-      return res.status(200).json({ success: true, data: [] });
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. MongoDB is required for expense categories.' },
+      });
     }
 
     const categories = await ExpenseCategory.find().sort({ name: 1 });
@@ -585,44 +582,40 @@ export async function createCategory(req, res, next) {
       });
     }
 
-    const { name, description = '', status = 'active' } = req.body;
-    const cleanName = String(name).trim();
-
-    if (isDbConnected()) {
-      const existing = await ExpenseCategory.findOne({
-        name: { $regex: new RegExp(`^${cleanName}$`, 'i') },
-      });
-      if (existing) {
-        return res.status(400).json({
-          success: false,
-          message: `An expense category named "${cleanName}" already exists.`,
-        });
-      }
-
-      const id = `exp-cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-      const newCategory = await ExpenseCategory.create({
-        id,
-        name: cleanName,
-        description: description.trim(),
-        status,
-        isDefault: false,
-      });
-
-      return res.status(201).json({
-        success: true,
-        message: 'Expense category created successfully.',
-        data: newCategory,
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot save expense category without MongoDB.' },
       });
     }
 
-    const fallbackCat = {
-      id: `exp-cat-${Date.now()}`,
+    const { name, description = '', status = 'active' } = req.body;
+    const cleanName = String(name).trim();
+
+    const existing = await ExpenseCategory.findOne({
+      name: { $regex: new RegExp(`^${cleanName}$`, 'i') },
+    });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: `An expense category named "${cleanName}" already exists.`,
+      });
+    }
+
+    const id = `exp-cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newCategory = await ExpenseCategory.create({
+      id,
       name: cleanName,
       description: description.trim(),
       status,
       isDefault: false,
-    };
-    return res.status(201).json({ success: true, data: fallbackCat });
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Expense category created successfully.',
+      data: newCategory,
+    });
   } catch (error) {
     next(error);
   }

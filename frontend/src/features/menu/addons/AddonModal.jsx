@@ -33,6 +33,8 @@ const AddonModalForm = ({
     addon?.costPrice !== undefined && addon?.costPrice !== null ? String(addon.costPrice) : ''
   );
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
   const validate = () => {
     const errs = {};
@@ -70,8 +72,10 @@ const AddonModalForm = ({
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault();
+    if (isSubmitting) return;
+    setSubmitError(null);
     if (!validate()) return;
 
     const finalType = type || detectAddonType(name.trim());
@@ -90,18 +94,25 @@ const AddonModalForm = ({
       costPrice: finalCostPrice,
     };
 
-    if (isEdit) {
-      updateAddon(addon.id, payload);
-    } else {
-      addAddon({
-        ...payload,
-        status: 'active',
-        categoryIds: [],
-        itemIds: [],
-      });
+    setIsSubmitting(true);
+    try {
+      if (isEdit) {
+        await updateAddon(addon.id, payload);
+      } else {
+        await addAddon({
+          ...payload,
+          status: 'active',
+          categoryIds: [],
+          itemIds: [],
+        });
+      }
+      onClose();
+    } catch (err) {
+      console.error('[AddonModal] Save failed:', err);
+      setSubmitError(err?.message || 'Failed to save add-on. Please check backend connection.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
   };
 
   return (
@@ -113,16 +124,21 @@ const AddonModalForm = ({
       maxWidth="max-w-md"
       footer={
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button variant="secondary" size="md" onClick={onClose} type="button">
+          <Button variant="secondary" size="md" onClick={onClose} type="button" disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button variant="primary" size="md" onClick={handleSubmit} type="button">
-            {isEdit ? 'Update Add-on' : 'Save Add-on'}
+          <Button variant="primary" size="md" onClick={handleSubmit} type="button" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : isEdit ? 'Update Add-on' : 'Save Add-on'}
           </Button>
         </div>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4 py-1">
+        {submitError && (
+          <div className="p-2.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
+            {submitError}
+          </div>
+        )}
         <FormField label="Addon Name" required error={errors.name}>
           <Input
             value={name}

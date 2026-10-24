@@ -62,11 +62,9 @@ export function getItemTier(item) {
 export async function getAllItems(req, res, next) {
   try {
     if (!isDbConnected()) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        data: [],
-        offline: true,
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. MongoDB is required for permanent menu items.' },
       });
     }
 
@@ -137,6 +135,13 @@ export async function getAllItems(req, res, next) {
  */
 export async function getItemById(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable.' },
+      });
+    }
+
     const { id } = req.params;
     const query = buildIdFilter(id);
 
@@ -167,6 +172,13 @@ export async function getItemById(req, res, next) {
  */
 export async function createItem(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot save menu item without MongoDB.' },
+      });
+    }
+
     const payload = { ...req.body };
 
     // Validate that categoryId exists in database, or find by name / Mongo _id
@@ -179,18 +191,15 @@ export async function createItem(req, res, next) {
     });
 
     if (!category) {
-      const catName = payload.categoryName || (payload.categoryId ? payload.categoryId.replace(/^cat-/, '').replace(/-/g, ' ') : 'General');
-      category = await Category.create({
-        id: payload.categoryId || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-        name: catName,
-        status: 'active',
-      }).catch(() => null);
+      return res.status(400).json({
+        success: false,
+        error: { message: `Referenced Category ID '${payload.categoryId}' does not exist` },
+      });
     }
 
-    // Set categoryName snapshot if not passed
-    if (category && !payload.categoryName) {
-      payload.categoryName = category.name;
-    }
+    // Set category snapshot
+    payload.categoryId = category.id;
+    payload.categoryName = category.name;
 
     // Auto-generate unique ID if not provided
     if (!payload.id) {
@@ -246,6 +255,13 @@ export async function createItem(req, res, next) {
  */
 export async function updateItem(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot update menu item without MongoDB.' },
+      });
+    }
+
     const { id } = req.params;
     const updates = { ...req.body };
 
@@ -313,6 +329,13 @@ export async function updateItem(req, res, next) {
  */
 export async function deleteItem(req, res, next) {
   try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection unavailable. Cannot delete menu item without MongoDB.' },
+      });
+    }
+
     const { id } = req.params;
     const query = buildIdFilter(id);
 
